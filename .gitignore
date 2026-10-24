@@ -1,0 +1,5 @@
+build/
+dist/
+*.spec
+Platinum3DSBuilder.exe
+__pycache__/

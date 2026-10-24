@@ -3,12 +3,14 @@
 #   p3ds_build.sh <step> [<step> ...]
 # Steps (each can be run on its own, and each is safe to repeat):
 #   check      show what is installed / staged / built
+#   needs      print which one-time steps are still missing (##NEED:<step>); used by "Build and install"
 #   setup      install tools (apt + devkitPro + pip) and link /workspace/platinum3ds  [needs root]
 #   link       only create the /workspace/platinum3ds link the project scripts expect  [needs root]
 #   stage      copy + verify your ROMs into baserom/ and roms/
 #   pspoke     clone pspoke, check out the pinned commit, apply pspoke-patches/
 #   full       from-scratch pspoke build (rebuild_all.sh) - the long one
-#   patches    apply work_patches/ to the generated tree (idempotent)
+#   patches    install work_patches/ into the generated tree (new, edited and deleted patches are all handled)
+#   testpatches  dry run of 'patches': says whether every patch fits, changes nothing
 #   relink     rebuild changed objects + link the .3dsx  (the quick one after you change code)
 #   followers  build followers.bin from your SoulSilver ROM (optional)
 #   deploy     copy .3dsx / ROM / followers.bin to the SD card folder (backs up the save first)
@@ -22,10 +24,13 @@ set -uo pipefail
 if [ "${1:-}" = "--env-b64" ]; then eval "$(printf %s "${2:-}" | base64 -d)"; shift 2; fi
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The GUI starts us with setsid; remember our process group so its Cancel button can stop the whole build.
+[ "$(ps -o pgid= $$ 2>/dev/null | tr -d ' ')" = "$$" ] && echo $$ > "/tmp/p3ds_builder.$(id -u).pid" 2>/dev/null
 ROOT="${P3DS_ROOT:-}"
 [ -z "$ROOT" ] && [ -d "$HERE/../work_patches" ] && ROOT="$(cd "$HERE/.." && pwd)"   # script still lives inside the project
 if [ -z "$ROOT" ] || [ ! -d "$ROOT/work_patches" ] || [ ! -d "$ROOT/pspoke-patches" ]; then
-  echo "ERROR: P3DS_ROOT must point at your clone of 3ds-platinum (the folder containing work_patches/ and pspoke-patches/)." >&2; exit 2
+  echo "ERROR: P3DS_ROOT must point at your clone of 3ds-platinum (the folder containing work_patches/ and pspoke-patches/)." >&2
+  echo "##HINT:The project folder is wrong. In Advanced, pick your 3ds-platinum folder (the one that has work_patches inside)."; exit 2
 fi
 LINK=/workspace/platinum3ds          # project scripts hard-code this path; it is just a symlink to $ROOT
 DKP=/opt/devkitpro
@@ -34,11 +39,54 @@ BASE_ROM="$ROOT/baserom/platinum_us_rev1.nds"
 SS_ROM="$ROOT/roms/soulsilver.nds"
 OUT3DSX="$ROOT/platinum3ds/full/platinum3ds_full.3dsx"
 T="$LINK/pspoke/.work/tree/test_out"
+T_ROOT="$ROOT/pspoke/.work/tree/test_out"
 
 say()  { printf '%s\n' "$*"; }
 ok()   { printf '  [ok]      %s\n' "$*"; }
 miss() { printf '  [MISSING] %s\n' "$*"; }
 die()  { printf 'ERROR: %s\n' "$*" >&2; return 1; }
+hint() { printf '##HINT:%s\n' "$*"; }   # one plain-English line the window shows in its result banner
+
+# Patch-set fingerprints: when they change, the step that used them is redone automatically.
+pspoke_fp() { cat "$ROOT/pspoke-patches/BASE_COMMIT" "$ROOT"/pspoke-patches/*.patch 2>/dev/null | tr -d '\r' | sha1sum | cut -c1-40; }
+PSPOKE_FP_FILE="$ROOT/pspoke/.git/p3ds_pspoke_patches.sha1"
+FULL_FP_FILE="$ROOT/pspoke/.work/p3ds_full_build.sha1"
+
+# A Windows git checkout (core.autocrlf) turns every line ending into CRLF, which breaks bash scripts
+# ("$'\r': command not found") and patches. Convert the project's text files back to LF; harmless otherwise.
+fix_line_endings() {
+  local list
+  if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    list=$(cd "$ROOT" && git ls-files -z | xargs -0 -r grep -lIZ $'\r' 2>/dev/null | tr '\0' '\n')
+  else
+    list=$(cd "$ROOT" && find scripts toolchain-3ds work_patches patches pspoke-patches followers platinum3ds forwarder tools \
+           -type f -print0 2>/dev/null | xargs -0 -r grep -lIZ $'\r' 2>/dev/null | tr '\0' '\n')
+  fi
+  [ -n "$list" ] || return 0
+  say "Fixing Windows line endings in $(printf '%s\n' "$list" | wc -l) project file(s)..."
+  ( cd "$ROOT" && printf '%s\n' "$list" | while IFS= read -r f; do [ -L "$f" ] || sed -i 's/\r$//' "$f"; done )
+}
+
+free_gb() { df -Pk "$1" 2>/dev/null | awk 'NR==2 {printf "%d", $4/1048576}'; }
+
+# Plain-English description of a Platinum dump that is not the one we need.
+rom_problem() {
+  local f="$1" code rev size
+  code=$(dd if="$f" bs=1 skip=12 count=4 2>/dev/null | tr -dc 'A-Z0-9')
+  rev=$(od -An -tu1 -j30 -N1 "$f" 2>/dev/null | tr -d ' ')
+  size=$(stat -c %s "$f" 2>/dev/null || echo 0)
+  case "$code" in
+    CPUE) ;;
+    CPUP|CPUD|CPUF|CPUI|CPUS|CPUJ|CPUK) echo "That is Pokemon Platinum from another region (code $code). You need the US version (CPUE)."; return ;;
+    IPGE|IPKE) echo "That is HeartGold/SoulSilver, not Platinum. Pick it in the SoulSilver box instead."; return ;;
+    ADAE|APAE) echo "That is Pokemon Diamond/Pearl, not Platinum."; return ;;
+    "") echo "That file is not a DS game (.nds)."; return ;;
+    *) echo "That is not Pokemon Platinum (game code $code)."; return ;;
+  esac
+  [ "$rev" = 0 ] && { echo "That is US Platinum Rev 0. The build needs Rev 1 (the later printing), dumped from your own cartridge."; return; }
+  [ "$size" -lt 134217728 ] && { echo "That Platinum file is trimmed ($((size/1048576)) MB). Use an untrimmed 128 MB dump."; return; }
+  echo "That Platinum file has been changed (patched, or a bad dump). Use a clean, unmodified dump of your cartridge."
+}
 
 build_env() {
   export DEVKITPRO=$DKP DEVKITARM=$DKP/devkitARM PSPDEV=$LINK/toolchain-3ds
@@ -60,6 +108,7 @@ ensure_link() {
 # ------------------------------------------------------------------------------------------------ check
 step_check() {
   say "Project folder : $ROOT"
+  g=$(free_gb "$ROOT"); [ -n "$g" ] && { [ "$g" -ge 10 ] && ok "free disk space ${g} GB" || miss "only ${g} GB free disk space (the full build needs about 10 GB)"; }
   command -v git >/dev/null && ok git || miss "git"
   command -v make >/dev/null && ok make || miss "make"
   command -v patch >/dev/null && ok patch || miss "patch"
@@ -86,6 +135,27 @@ step_check() {
   return 0
 }
 
+# Which one-time steps "Build and install" still has to run. Prints ##NEED:<step> lines.
+step_needs() {
+  local tools=ok
+  for c in git make patch python3 sha1sum; do command -v $c >/dev/null || tools=missing; done
+  python3 -c 'import ndspy, PIL' 2>/dev/null || tools=missing
+  for f in "$DKP/devkitARM/bin/arm-none-eabi-gcc" "$DKP/libctru/include/3ds.h" "$DKP/libctru/include/citro3d.h" "$DKP/tools/bin/3dsxtool" "$DKP/tools/bin/picasso"; do
+    [ -e "$f" ] || tools=missing
+  done
+  [ $tools = ok ] || echo "##NEED:setup"
+  if [ "$ROOT" != "$LINK" ] && ! { [ -L "$LINK" ] && [ "$(readlink -f "$LINK")" = "$(readlink -f "$ROOT")" ]; }; then echo "##NEED:link"; fi
+  # A tree built before this tool kept fingerprints is taken as up to date (no surprise from-scratch rebuild).
+  if git -C "$ROOT/pspoke" rev-parse --verify -q platinum3ds >/dev/null 2>&1 && [ ! -f "$PSPOKE_FP_FILE" ]; then pspoke_fp > "$PSPOKE_FP_FILE"; fi
+  if [ -d "$T_ROOT" ] && [ ! -f "$FULL_FP_FILE" ]; then pspoke_fp > "$FULL_FP_FILE"; fi
+  if [ ! -d "$ROOT/pspoke/.git" ] || [ "$(cat "$PSPOKE_FP_FILE" 2>/dev/null)" != "$(pspoke_fp)" ]; then
+    echo "##NEED:pspoke"; echo "##NEED:full"
+  elif [ ! -d "$T_ROOT" ] || [ "$(cat "$FULL_FP_FILE" 2>/dev/null)" != "$(pspoke_fp)" ]; then
+    echo "##NEED:full"
+  fi
+  return 0
+}
+
 # ------------------------------------------------------------------------------------------------ setup (root)
 step_setup() {
   if [ "$(id -u)" -ne 0 ] && ! sudo -n true 2>/dev/null; then
@@ -93,7 +163,7 @@ step_setup() {
   fi
   export DEBIAN_FRONTEND=noninteractive
   say "Installing system packages..."
-  as_root apt-get update -qq || return 1
+  as_root apt-get update -qq || { hint "Could not download tools. Check that this computer is online, then press the button again."; return 1; }
   as_root apt-get install -y -qq make git patch python3 python3-pip imagemagick curl wget xz-utils ca-certificates gnupg >/dev/null || return 1
   if [ ! -x "$DKP/devkitARM/bin/arm-none-eabi-gcc" ]; then
     say "Installing devkitPro (official installer)..."
@@ -115,10 +185,11 @@ step_link() { ensure_link && ok "$LINK -> $ROOT"; }
 step_stage() {
   src="${P3DS_PLATINUM:-}"
   if [ -z "$src" ] && [ -f "$BASE_ROM" ]; then src="$BASE_ROM"; fi
-  [ -n "$src" ] && [ -f "$src" ] || { die "no Platinum ROM selected (set it in the builder)"; return 1; }
+  [ -n "$src" ] && [ -f "$src" ] || { die "no Platinum ROM selected (set it in the builder)"; hint "Pick your Pokemon Platinum .nds file in box 1."; return 1; }
   s=$(sha1sum "$src" | cut -d' ' -f1)
   if [ "$s" != "$PLAT_SHA1" ]; then
-    die "Platinum ROM SHA1 is $s, expected $PLAT_SHA1 (US, Rev 1). The build only works with that exact dump."; return 1
+    why=$(rom_problem "$src")
+    die "Platinum ROM SHA1 is $s, expected $PLAT_SHA1 (US, Rev 1). $why"; hint "$why"; return 1
   fi
   mkdir -p "$ROOT/baserom" "$ROOT/roms"
   [ "$(readlink -f "$src")" = "$(readlink -f "$BASE_ROM")" ] || cp -f "$src" "$BASE_ROM"
@@ -127,7 +198,7 @@ step_stage() {
   if [ -n "$ss" ]; then
     [ -f "$ss" ] || { die "SoulSilver file not found: $ss"; return 1; }
     code=$(dd if="$ss" bs=1 skip=12 count=4 2>/dev/null)
-    [ "$code" = IPGE ] || { die "that is not a US SoulSilver ROM (game code '$code', expected IPGE)"; return 1; }
+    [ "$code" = IPGE ] || { die "that is not a US SoulSilver ROM (game code '$code', expected IPGE)"; hint "The SoulSilver file is not US SoulSilver. Clear that box (it is optional) or pick the right file."; return 1; }
     [ "$(readlink -f "$ss")" = "$(readlink -f "$SS_ROM")" ] || cp -f "$ss" "$SS_ROM"
     ok "SoulSilver ROM staged"
   fi
@@ -135,18 +206,39 @@ step_stage() {
 
 # ------------------------------------------------------------------------------------------------ pspoke
 step_pspoke() {
+  fix_line_endings
   cd "$ROOT" || return 1
-  [ -d pspoke/.git ] || git clone https://github.com/IbrahimIrfan/pspoke.git pspoke || return 1
+  if [ ! -d pspoke/.git ]; then
+    rm -rf pspoke.partial
+    git clone https://github.com/IbrahimIrfan/pspoke.git pspoke.partial && mv pspoke.partial pspoke \
+      || { hint "Could not download pspoke. Check that this computer is online, then press the button again."; return 1; }
+  fi
   cd pspoke || return 1
-  if git rev-parse --verify -q platinum3ds >/dev/null; then
+  fp=$(pspoke_fp)
+  if git rev-parse --verify -q platinum3ds >/dev/null && [ ! -f "$PSPOKE_FP_FILE" ]; then echo "$fp" > "$PSPOKE_FP_FILE"; fi
+  if git rev-parse --verify -q platinum3ds >/dev/null && [ "$(cat "$PSPOKE_FP_FILE" 2>/dev/null)" = "$fp" ]; then
     git checkout -q platinum3ds && ok "pspoke already prepared (branch platinum3ds)"; return 0
   fi
-  git checkout -q -b platinum3ds "$(cat ../pspoke-patches/BASE_COMMIT)" || return 1
-  if ! git -c user.name=p3ds-builder -c user.email=builder@localhost am ../pspoke-patches/*.patch; then
-    git am --abort 2>/dev/null; git checkout -q - 2>/dev/null; git branch -D platinum3ds 2>/dev/null
-    die "applying pspoke-patches failed (output above)"; return 1
+  base=$(tr -d '\r\n ' < ../pspoke-patches/BASE_COMMIT)
+  git cat-file -e "$base^{commit}" 2>/dev/null || git fetch -q origin || { hint "Could not update pspoke. Check that this computer is online."; return 1; }
+  if git rev-parse --verify -q platinum3ds >/dev/null; then
+    say "Your pspoke-patches changed since the last build: re-preparing pspoke with the new set."
+    # Anything changed by hand inside pspoke is kept in a git stash, never thrown away.
+    git am --abort 2>/dev/null
+    if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+      git stash push -q -m "p3ds-builder backup $(date +%Y%m%d_%H%M%S)" && say "  (saved local pspoke changes in: git -C pspoke stash list)"
+    fi
+    git checkout -q --detach "$base" && git branch -D platinum3ds >/dev/null || return 1
   fi
-  ok "pspoke checked out and patched"
+  rm -rf port/.p3ds_applied
+  git checkout -q -b platinum3ds "$base" || return 1
+  if ! git -c user.name=p3ds-builder -c user.email=builder@localhost am -q ../pspoke-patches/*.patch; then
+    git am --abort 2>/dev/null; git checkout -q --detach "$base" 2>/dev/null; git branch -D platinum3ds >/dev/null 2>&1
+    die "applying pspoke-patches failed (output above)"
+    hint "One of your pspoke-patches does not fit pspoke $base. The log names it; re-make it with git format-patch."; return 1
+  fi
+  echo "$fp" > "$PSPOKE_FP_FILE"
+  ok "pspoke checked out and patched ($(ls ../pspoke-patches/*.patch | wc -l) patches)"
 }
 
 # ------------------------------------------------------------------------------------------------ full build
@@ -155,9 +247,12 @@ step_full() {
   [ -f "$BASE_ROM" ] || { die "Platinum ROM not staged - run the 'stage' step"; return 1; }
   [ -d "$ROOT/pspoke/.git" ] || { die "pspoke not prepared - run the 'pspoke' step"; return 1; }
   [ -x "$DKP/devkitARM/bin/arm-none-eabi-gcc" ] || { die "devkitARM missing - run 'setup'"; return 1; }
+  fix_line_endings
+  g=$(free_gb "$ROOT"); [ -n "$g" ] && [ "$g" -lt 5 ] && { die "only ${g} GB free"; hint "The disk is almost full (${g} GB free). Free up about 10 GB and press the button again."; return 1; }
   build_env; cd "$LINK" || return 1
   say "Full from-scratch build. This takes a long time; the log keeps scrolling while it works."
   bash scripts/rebuild_all.sh || { die "rebuild_all.sh failed - the real error is higher up in the log"; return 1; }
+  pspoke_fp > "$FULL_FP_FILE"
   rm -rf "$LINK/pspoke/.work.bak"
   rm -f "$LINK/pspoke/.work/rebuild_pending.txt"
   ok "full build done (patches and final link follow)"
@@ -169,9 +264,19 @@ step_patches() {
   [ -d "$ROOT/pspoke/.work/tree/test_out" ] || { die "no generated tree yet - run the 'full' step first"; return 1; }
   args=("$ROOT")
   [ "${P3DS_LEGACY:-0}" = 1 ] && args+=(--legacy)
+  fix_line_endings
   python3 -I "$HERE/apply_worktree.py" "${args[@]}"
   rc=$?
-  [ $rc -eq 0 ] || { die "some patches did not apply cleanly (list above). Compare with PROGRESS.md."; return 1; }
+  [ $rc -eq 0 ] || { die "some patches could not be installed (list above). Nothing was half-applied."
+    hint "A patch does not fit the game source (named in the log). Fix that patch file and press the button again."; return 1; }
+}
+
+step_testpatches() {
+  [ -d "$ROOT/pspoke/.work/tree/test_out" ] || { die "no generated tree yet - run the full build first"; return 1; }
+  args=("$ROOT" --check)
+  [ "${P3DS_LEGACY:-0}" = 1 ] && args+=(--legacy)
+  fix_line_endings
+  python3 -I "$HERE/apply_worktree.py" "${args[@]}" || { hint "Some patches do not fit (named in the log). Nothing was changed."; return 1; }
 }
 
 # ------------------------------------------------------------------------------------------------ relink
@@ -198,7 +303,7 @@ step_relink() {
     && make -C ../native-render-opt native_gpu.o GPU2D_Soft.o \
     && make -C ../native-stack-render g3_handler.o frontend.o ) || { die "native object build failed (error above)"; return 1; }
   say "Linking..."
-  ( cd "$LINK/platinum3ds/full" && rm -f platinum3ds_full.elf && make ) || { die "link failed (error above)"; return 1; }
+  ( cd "$LINK/platinum3ds/full" && rm -f platinum3ds_full.elf && make ) || { die "link failed (error above)"; hint "The game did not link. The first red 'error' line in the details is the cause."; return 1; }
   [ -f "$OUT3DSX" ] || { die "no .3dsx produced"; return 1; }
   ok "built $(ls -l "$OUT3DSX" | awk '{print $5}') bytes  SHA1 $(sha1sum "$OUT3DSX" | cut -c1-12)"
 }
@@ -214,24 +319,31 @@ step_followers() {
 step_deploy() {
   sd="${P3DS_SD:-}"
   [ -n "$sd" ] || { say "No SD card folder selected - skipping copy. Your build is at: $OUT3DSX"; return 0; }
-  [ -d "$sd" ] || { die "SD card folder not found: $sd"; return 1; }
+  [ -d "$sd" ] || { die "SD card folder not found: $sd"; hint "The SD card is not plugged in (or its drive letter changed). Plug it in, pick it in box 2, press the button again."; return 1; }
   [ -f "$OUT3DSX" ] || { die "nothing built yet"; return 1; }
-  d="$sd/3ds/platinum3ds"; mkdir -p "$d" || return 1
+  [ -d "$sd/Nintendo 3DS" ] || [ -d "$sd/3ds" ] || say "  [!]       This does not look like a 3DS SD card (no 'Nintendo 3DS' or '3ds' folder). Copying anyway."
+  need=$(( $(stat -c %s "$OUT3DSX") + 140000000 )); have=$(df -Pk "$sd" 2>/dev/null | awk 'NR==2 {print $4*1024}')
+  [ -n "$have" ] && [ "$have" -lt "$need" ] && { die "not enough space on the SD card"; hint "The SD card is full. Free up about 200 MB on it and press the button again."; return 1; }
+  d="$sd/3ds/platinum3ds"
+  mkdir -p "$d" 2>/dev/null && [ -w "$d" ] || { die "cannot write to $d"; hint "The SD card is write-protected. Slide the little lock switch on the card up, plug it back in, and try again."; return 1; }
   if [ -f "$d/platinum.sav" ]; then
     mkdir -p "$d/save_backups"; cp -f "$d/platinum.sav" "$d/save_backups/platinum_$(date +%Y%m%d_%H%M%S).sav" && ok "save backed up to save_backups/"
   fi
-  cp -f "$OUT3DSX" "$d/platinum3ds_full.3dsx" || return 1
+  cp -f "$OUT3DSX" "$d/platinum3ds_full.3dsx" && sync \
+    && [ "$(sha1sum < "$OUT3DSX")" = "$(sha1sum < "$d/platinum3ds_full.3dsx")" ] \
+    || { die "copy to the SD card failed or came out different"; hint "Copying to the SD card failed. Re-seat the card and try again; if it keeps failing the card may be damaged."; return 1; }
   [ -f "$BASE_ROM" ] && [ ! -f "$d/platinum.nds" ] && cp -f "$BASE_ROM" "$d/platinum.nds"
   [ -f "$ROOT/platinum3ds/full/followers.bin" ] && cp -f "$ROOT/platinum3ds/full/followers.bin" "$d/followers.bin"
   ok "copied to $d"
   say "Launch it from the Homebrew Launcher on the New 3DS."
+  echo "##INSTALLED:$d"
 }
 
 # ------------------------------------------------------------------------------------------------ driver
 run_step() {
   name="$1"
   case "$name" in
-    check|setup|link|stage|pspoke|full|patches|relink|followers|deploy) ;;
+    check|needs|setup|link|stage|pspoke|full|patches|testpatches|relink|followers|deploy) ;;
     *) echo "unknown step: $name" >&2; return 2 ;;
   esac
   echo "##STEP:$name:START"
