@@ -13,10 +13,11 @@
 #   testpatches  dry run of 'patches': says whether every patch fits, changes nothing
 #   relink     rebuild changed objects + link the .3dsx  (the quick one after you change code)
 #   followers  build followers.bin from your SoulSilver ROM (optional)
-#   deploy     copy .3dsx / ROM / followers.bin to the SD card folder (backs up the save first)
-#   all        check stage pspoke full patches relink followers deploy
-#   quick      patches relink deploy
-# Environment: P3DS_ROOT (repo), P3DS_PLATINUM (path to .nds), P3DS_SOULSILVER (optional), P3DS_SD (SD root, optional)
+#   cia        make the HOME Menu installable platinum3ds_full.cia (builds makerom/bannertool the first time)
+#   deploy     copy .3dsx / ROM / followers.bin (and the .cia if 'cia' ran) to the SD card (backs up the save first)
+#   all        check stage pspoke full patches relink followers [cia] deploy     ([cia] only when P3DS_CIA=1)
+#   quick      patches relink [cia] deploy
+# Environment: P3DS_CIA=1 also makes the .cia;  P3DS_ROOT (repo), P3DS_PLATINUM (path to .nds), P3DS_SOULSILVER (optional), P3DS_SD (SD root, optional)
 #              P3DS_LEGACY=1 also applies the older patches/*.patch
 set -uo pipefail
 
@@ -164,7 +165,7 @@ step_setup() {
   export DEBIAN_FRONTEND=noninteractive
   say "Installing system packages..."
   as_root apt-get update -qq || { hint "Could not download tools. Check that this computer is online, then press the button again."; return 1; }
-  as_root apt-get install -y -qq make git patch python3 python3-pip imagemagick curl wget xz-utils ca-certificates gnupg >/dev/null || return 1
+  as_root apt-get install -y -qq make git patch python3 python3-pip build-essential rsync imagemagick curl wget xz-utils ca-certificates gnupg >/dev/null || return 1
   if [ ! -x "$DKP/devkitARM/bin/arm-none-eabi-gcc" ]; then
     say "Installing devkitPro (official installer)..."
     if ! command -v dkp-pacman >/dev/null; then
@@ -315,6 +316,20 @@ step_followers() {
   ok "followers.bin created"
 }
 
+# ------------------------------------------------------------------------------------------------ cia
+CIA_BUILT=0
+step_cia() {
+  ensure_link || return 1
+  [ -f "$LINK/platinum3ds/full/platinum3ds_full.elf" ] || { die "nothing linked yet - run the 'relink' step first"; return 1; }
+  build_env
+  bash "$HERE/build_cia_tools.sh" "$ROOT/build/cia-tools" || { die "could not build makerom/bannertool"; hint "The tools for the HOME Menu (.cia) version could not be built. The .3dsx still works."; return 1; }
+  ( cd "$LINK/platinum3ds/full" && make cia BT="$ROOT/build/cia-tools/bin/bannertool" MAKEROM="$ROOT/build/cia-tools/bin/makerom" ) \
+    || { die "making the .cia failed (error above)"; hint "The HOME Menu (.cia) version failed. The .3dsx still works. Press 'Copy details for help'."; return 1; }
+  [ -f "$ROOT/platinum3ds/full/platinum3ds_full.cia" ] || { die "no .cia produced"; return 1; }
+  CIA_BUILT=1
+  ok "built $(stat -c %s "$ROOT/platinum3ds/full/platinum3ds_full.cia") bytes platinum3ds_full.cia"
+}
+
 # ------------------------------------------------------------------------------------------------ deploy
 step_deploy() {
   sd="${P3DS_SD:-}"
@@ -334,6 +349,9 @@ step_deploy() {
     || { die "copy to the SD card failed or came out different"; hint "Copying to the SD card failed. Re-seat the card and try again; if it keeps failing the card may be damaged."; return 1; }
   [ -f "$BASE_ROM" ] && [ ! -f "$d/platinum.nds" ] && cp -f "$BASE_ROM" "$d/platinum.nds"
   [ -f "$ROOT/platinum3ds/full/followers.bin" ] && cp -f "$ROOT/platinum3ds/full/followers.bin" "$d/followers.bin"
+  if [ "$CIA_BUILT" = 1 ]; then
+    mkdir -p "$sd/cias" && cp -f "$ROOT/platinum3ds/full/platinum3ds_full.cia" "$sd/cias/platinum3ds.cia" && ok "HOME Menu installer copied to $sd/cias/platinum3ds.cia (install it with FBI)"
+  fi
   ok "copied to $d"
   say "Launch it from the Homebrew Launcher on the New 3DS."
   echo "##INSTALLED:$d"
@@ -343,7 +361,7 @@ step_deploy() {
 run_step() {
   name="$1"
   case "$name" in
-    check|needs|setup|link|stage|pspoke|full|patches|testpatches|relink|followers|deploy) ;;
+    check|needs|setup|link|stage|pspoke|full|patches|testpatches|relink|followers|cia|deploy) ;;
     *) echo "unknown step: $name" >&2; return 2 ;;
   esac
   echo "##STEP:$name:START"
@@ -354,8 +372,8 @@ run_step() {
 steps=()
 for a in "$@"; do
   case "$a" in
-    all)   steps+=(check stage pspoke full patches relink followers deploy) ;;
-    quick) steps+=(patches relink deploy) ;;
+    all)   steps+=(check stage pspoke full patches relink followers); [ "${P3DS_CIA:-0}" = 1 ] && steps+=(cia); steps+=(deploy) ;;
+    quick) steps+=(patches relink); [ "${P3DS_CIA:-0}" = 1 ] && steps+=(cia); steps+=(deploy) ;;
     *)     steps+=("$a") ;;
   esac
 done
