@@ -12,10 +12,12 @@
 #   patches    install work_patches/ into the generated tree (new, edited and deleted patches are all handled)
 #   testpatches  dry run of 'patches': says whether every patch fits, changes nothing
 #   relink     rebuild changed objects + link the .3dsx  (the quick one after you change code)
+#   cia        build the installable .cia (HOME Menu: 804 MHz, 124 MB). Builds makerom + bannertool once. A failure
+#              here is only a warning: the .3dsx is still copied.
 #   followers  build followers.bin from your SoulSilver ROM (optional)
-#   deploy     copy .3dsx / ROM / followers.bin to the SD card folder (backs up the save first)
-#   all        check stage pspoke full patches relink followers deploy
-#   quick      patches relink deploy
+#   deploy     copy .3dsx / .cia / ROM / followers.bin to the SD card (backs up the save first; .cia -> cias/)
+#   all        check stage pspoke full patches relink cia followers deploy
+#   quick      patches relink cia deploy
 # Environment: P3DS_ROOT (repo), P3DS_PLATINUM (path to .nds), P3DS_SOULSILVER (optional), P3DS_SD (SD root, optional)
 #              P3DS_LEGACY=1 also applies the older patches/*.patch
 set -uo pipefail
@@ -38,6 +40,8 @@ PLAT_SHA1=0862ec35b24de5c7e2dcb88c9eea0873110d755c
 BASE_ROM="$ROOT/baserom/platinum_us_rev1.nds"
 SS_ROM="$ROOT/roms/soulsilver.nds"
 OUT3DSX="$ROOT/platinum3ds/full/platinum3ds_full.3dsx"
+OUTCIA="$ROOT/platinum3ds/full/platinum3ds_full.cia"
+CIA_TOOLS="$ROOT/build/cia-tools"
 T="$LINK/pspoke/.work/tree/test_out"
 T_ROOT="$ROOT/pspoke/.work/tree/test_out"
 
@@ -308,6 +312,24 @@ step_relink() {
   ok "built $(ls -l "$OUT3DSX" | awk '{print $5}') bytes  SHA1 $(sha1sum "$OUT3DSX" | cut -c1-12)"
 }
 
+# ------------------------------------------------------------------------------------------------ cia
+step_cia() {
+  [ -f "$ROOT/platinum3ds/full/platinum3ds_full.elf" ] || { die "nothing built yet - run 'relink' first"; return 1; }
+  [ -f "$ROOT/platinum3ds/full/cia/platinum3ds.rsf" ] || { say "  [!]       This project has no CIA setup yet (platinum3ds/full/cia). Skipping the .cia."; return 0; }
+  rm -f "$OUTCIA"
+  say "Getting makerom + bannertool (built once, then reused)..."
+  if ! bash "$HERE/build_cia_tools.sh" "$CIA_TOOLS"; then
+    say "  [!]       Could not build makerom/bannertool. No .cia this time; the .3dsx is still installed."; return 0
+  fi
+  say "Making the .cia..."
+  if ( cd "$ROOT/platinum3ds/full" && make cia BT="$CIA_TOOLS/bin/bannertool" MAKEROM="$CIA_TOOLS/bin/makerom" ROM="$BASE_ROM" ) && [ -f "$OUTCIA" ]; then
+    ok "built $(ls -l "$OUTCIA" | awk '{print $5}') bytes  SHA1 $(sha1sum "$OUTCIA" | cut -c1-12)"
+  else
+    rm -f "$OUTCIA"; say "  [!]       The .cia step failed (details above). The .3dsx is still installed."
+  fi
+  return 0
+}
+
 # ------------------------------------------------------------------------------------------------ followers
 step_followers() {
   [ -f "$SS_ROM" ] || { say "No SoulSilver ROM staged - skipping followers.bin (optional)."; return 0; }
@@ -335,7 +357,16 @@ step_deploy() {
   [ -f "$BASE_ROM" ] && [ ! -f "$d/platinum.nds" ] && cp -f "$BASE_ROM" "$d/platinum.nds"
   [ -f "$ROOT/platinum3ds/full/followers.bin" ] && cp -f "$ROOT/platinum3ds/full/followers.bin" "$d/followers.bin"
   ok "copied to $d"
-  say "Launch it from the Homebrew Launcher on the New 3DS."
+  if [ -f "$OUTCIA" ]; then
+    mkdir -p "$sd/cias" && cp -f "$OUTCIA" "$sd/cias/platinum3ds.cia" && sync \
+      && [ "$(sha1sum < "$OUTCIA")" = "$(sha1sum < "$sd/cias/platinum3ds.cia")" ] \
+      || { die "copying the .cia to the SD card failed"; return 1; }
+    ok "copied cias/platinum3ds.cia"
+    say "On the New 3DS: open FBI > SD > cias > platinum3ds.cia > Install and delete CIA, then start it from the HOME Menu."
+    echo "##CIA:$sd/cias/platinum3ds.cia"
+  else
+    say "Launch it from the Homebrew Launcher on the New 3DS."
+  fi
   echo "##INSTALLED:$d"
 }
 
@@ -343,7 +374,7 @@ step_deploy() {
 run_step() {
   name="$1"
   case "$name" in
-    check|needs|setup|link|stage|pspoke|full|patches|testpatches|relink|followers|deploy) ;;
+    check|needs|setup|link|stage|pspoke|full|patches|testpatches|relink|cia|followers|deploy) ;;
     *) echo "unknown step: $name" >&2; return 2 ;;
   esac
   echo "##STEP:$name:START"
@@ -354,8 +385,8 @@ run_step() {
 steps=()
 for a in "$@"; do
   case "$a" in
-    all)   steps+=(check stage pspoke full patches relink followers deploy) ;;
-    quick) steps+=(patches relink deploy) ;;
+    all)   steps+=(check stage pspoke full patches relink cia followers deploy) ;;
+    quick) steps+=(patches relink cia deploy) ;;
     *)     steps+=("$a") ;;
   esac
 done

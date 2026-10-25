@@ -22,6 +22,14 @@ If something goes wrong, a red box says what to do in plain words. **Copy detail
 **Advanced** has the project folder (found automatically when possible) and single steps: Check setup,
 Test my patches (changes nothing), Quick rebuild, Reinstall tools, Rebuild everything.
 
+## The HOME Menu version (.cia)
+
+Every build also makes `platinum3ds_full.cia` (the installed version gets the New 3DS's 804 MHz, L2 cache and 124 MB
+mode) and copies it to `cias/platinum3ds.cia` on the card. On the 3DS: **FBI > SD > cias > platinum3ds.cia >
+Install and delete CIA**, then start it from the HOME Menu. makerom and bannertool are built from source the first time
+(`build_cia_tools.sh`, from GabeSud0/pokeplatinum-3ds, GPL-3.0; needs gcc/g++). If the .cia step fails, the .3dsx is
+still installed and the log says why.
+
 ## Your patches
 
 The builder installs everything in your `3ds-platinum` project:
@@ -55,7 +63,7 @@ are fixed automatically. Use **Advanced > Test my patches** to check a patch wit
 
 `python3 p3ds_builder.py` (needs `python3-tk`), or the script directly:
 `P3DS_ROOT=~/3ds-platinum P3DS_PLATINUM=~/platinum.nds P3DS_SD=/media/me/SD bash p3ds_build.sh check | all | quick`.
-Steps: `check needs setup link stage pspoke full patches testpatches relink followers deploy`.
+Steps: `check needs setup link stage pspoke full patches testpatches relink cia followers deploy`.
 
 ## Status
 

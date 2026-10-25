@@ -22,7 +22,7 @@ NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if IS_WIN else 0
 FRIENDLY = {"check": "Checking setup", "needs": "Working out what is needed", "setup": "Installing build tools (one time)",
             "link": "Linking project folder", "stage": "Checking your game file", "pspoke": "Preparing pspoke",
             "full": "Building the whole game (first time, long)", "patches": "Installing your patches",
-            "testpatches": "Testing your patches", "relink": "Compiling and linking",
+            "testpatches": "Testing your patches", "relink": "Compiling and linking", "cia": "Making the HOME Menu .cia",
             "followers": "Making following-Pokemon data", "deploy": "Copying to the SD card"}
 
 # Advanced buttons: name -> [(needs root, steps)]. "auto" (the big button) is planned at run time.
@@ -30,9 +30,9 @@ PIPELINES = {
     "check":   [(False, ["check"])],
     "install": [(True, ["setup", "link"])],
     "test":    [(False, ["testpatches"])],
-    "quick":   [(False, ["patches", "relink", "deploy"])],
+    "quick":   [(False, ["patches", "relink", "cia", "deploy"])],
     "full":    [(False, ["check", "stage", "pspoke"]), (True, ["link"]),
-                (False, ["full", "patches", "relink", "followers", "deploy"])],
+                (False, ["full", "patches", "relink", "cia", "followers", "deploy"])],
 }
 
 # Known failure text -> what to tell the user. First match wins; the script's own ##HINT lines win over these.
@@ -297,7 +297,7 @@ def run_gui():
     legacy = tk.BooleanVar(value=cfg["legacy"])
     status = tk.StringVar(value="")
     q = queue.Queue()
-    st = {"proc": None, "busy": False, "cancel": False, "hint": "", "failed": "", "installed": "",
+    st = {"proc": None, "busy": False, "cancel": False, "hint": "", "failed": "", "installed": "", "cia": "",
           "plat_ok": None, "planned": 0, "done_steps": 0}
 
     GOOD, BAD, MUTED = "#1a7f37", "#cf222e", "#57606a"
@@ -546,6 +546,9 @@ def run_gui():
             if line.startswith("##INSTALLED:"):
                 st["installed"] = line.strip()[12:]
                 continue
+            if line.startswith("##CIA:"):
+                st["cia"] = line.strip()[6:]
+                continue
             if line.startswith("##DONE:"):
                 continue
             tag = "bad" if line.startswith(("ERROR", "  [MISSING]", "  CONFLICT", "  FAIL")) else \
@@ -560,7 +563,7 @@ def run_gui():
         elif "link" in needs:
             plan.append((True, ["link"]))
         rest = ["stage"] + (["pspoke"] if "pspoke" in needs else []) + (["full"] if "full" in needs else [])
-        rest += ["patches", "relink"] + (["followers"] if has_ss else []) + ["deploy"]
+        rest += ["patches", "relink", "cia"] + (["followers"] if has_ss else []) + ["deploy"]
         plan.append((False, rest))
         return plan
 
@@ -638,7 +641,7 @@ def run_gui():
         d = dict(c)
         d["legacy"] = legacy.get()
         save_settings(d)
-        st.update(cancel=False, hint="", failed="", installed="")
+        st.update(cancel=False, hint="", failed="", installed="", cia="")
         hide_banner()
         log.configure(state="normal")
         log.delete("1.0", "end")
@@ -675,6 +678,9 @@ def run_gui():
             show_banner(True, msg)
             if pipe == "check":
                 toggle("details", True)
+        elif st["installed"] and st["cia"]:
+            show_banner(True, "Installed! Put the SD card back in your New 3DS, open FBI, go to SD > cias > "
+                              "platinum3ds.cia and pick Install and delete CIA, then start Platinum 3DS from the HOME Menu.", "")
         elif st["installed"]:
             show_banner(True, "Installed! Put the SD card back in your New 3DS, open the Homebrew Launcher and start "
                               "Platinum 3DS.", "")
