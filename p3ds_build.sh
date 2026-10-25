@@ -116,6 +116,7 @@ step_check() {
   command -v git >/dev/null && ok git || miss "git"
   command -v make >/dev/null && ok make || miss "make"
   command -v patch >/dev/null && ok patch || miss "patch"
+  command -v gcc >/dev/null && command -v g++ >/dev/null && ok "gcc/g++ (host, for makerom/bannertool)" || miss "gcc/g++ (apt install gcc g++; needed for the .cia)"
   command -v python3 >/dev/null && ok "python3 $(python3 -V 2>&1 | cut -d' ' -f2)" || miss "python3"
   python3 -c 'import ndspy' 2>/dev/null && ok "python ndspy" || miss "python ndspy  (pip install ndspy)"
   python3 -c 'import PIL' 2>/dev/null && ok "python pillow" || miss "python pillow (pip install pillow)"
@@ -168,7 +169,7 @@ step_setup() {
   export DEBIAN_FRONTEND=noninteractive
   say "Installing system packages..."
   as_root apt-get update -qq || { hint "Could not download tools. Check that this computer is online, then press the button again."; return 1; }
-  as_root apt-get install -y -qq make git patch python3 python3-pip imagemagick curl wget xz-utils ca-certificates gnupg >/dev/null || return 1
+  as_root apt-get install -y -qq make gcc g++ git patch python3 python3-pip imagemagick curl wget xz-utils ca-certificates gnupg >/dev/null || return 1
   if [ ! -x "$DKP/devkitARM/bin/arm-none-eabi-gcc" ]; then
     say "Installing devkitPro (official installer)..."
     if ! command -v dkp-pacman >/dev/null; then
@@ -303,6 +304,8 @@ step_relink() {
   say "Rebuilding native objects..."
   ( cd "$T/native-audio-app" \
     && APP=$(sed -n 's/^APPOBJS:= *//p' "$LINK/platinum3ds/full/Makefile") \
+    && SND=$(sed -n 's#^[a-z_0-9]*\.o: \.\./native-audio-sound/\([a-z_0-9]*\.o\)$#\1#p' Makefile | tr '\n' ' ') \
+    && make -C ../native-audio-sound $SND \
     && make $APP && psp-objcopy --weaken-symbol=getlocalhost offline.o \
     && make -C ../native-render-opt native_gpu.o GPU2D_Soft.o \
     && make -C ../native-stack-render g3_handler.o frontend.o ) || { die "native object build failed (error above)"; return 1; }
@@ -380,6 +383,20 @@ run_step() {
   echo "##STEP:$name:START"
   if "step_$name"; then echo "##STEP:$name:OK"; return 0; else echo "##STEP:$name:FAIL"; return 1; fi
 }
+
+# WSL only auto-mounts the drives that existed when it started: an SD card plugged in later (F:) has no /mnt/f.
+# Mount such a drive (needs root, like 'link'); if that is not possible the stage/deploy steps explain it.
+ensure_wsl_drive() {
+  case "$1" in /mnt/[a-z]/*|/mnt/[a-z]) ;; *) return 0 ;; esac
+  grep -qi microsoft /proc/version 2>/dev/null || return 0
+  m=${1:0:6}
+  mountpoint -q "$m" && return 0
+  as_root mkdir -p "$m" && as_root mount -t drvfs "${m:5:1}:" "$m" -o uid="${SUDO_UID:-$(id -u)}",gid="${SUDO_GID:-$(id -g)}" \
+    && echo "  [ok]      mounted Windows drive ${m:5:1}: at $m" || true
+}
+ensure_wsl_drive "${P3DS_SD:-}"
+ensure_wsl_drive "${P3DS_PLATINUM:-}"
+ensure_wsl_drive "${P3DS_SOULSILVER:-}"
 
 [ $# -gt 0 ] || { sed -n '2,20p' "$0"; exit 2; }
 steps=()
