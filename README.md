@@ -99,7 +99,7 @@ Platinum: tested here against the real pspoke (pinned commit + your pspoke-patch
 itself (Linux, virtual display) with a stand-in build script, including Cancel.
 
 SoulSilver and the two-game window (added later): the ROM checks, project finder, step plans, project download and the
-`ss_build.sh` check / needs / stage steps are tested. **Not yet tested: the new two-game window itself (Tk was not available where it was written), the long SoulSilver compile through this builder, the new `.cia` steps for both games, and the Windows-only parts (WSL, drive detection, the `.exe`).** The commands it
+`ss_build.sh` check / needs / stage steps are tested. The new two-game window was driven headless (virtual display, stand-in build scripts) through download, needs, tool setup, both games' steps and the `.cia` option. **Not yet tested: the long SoulSilver compile through this builder, the real `.cia` steps for both games, and the Windows-only parts (WSL, drive detection, the `.exe`).** The commands it
 runs are the same ones the SoulSilver repo documents (`scripts/ss3ds_build.sh`, then `make` in `soulsilver3ds/full`).
 
 ## For AI helpers

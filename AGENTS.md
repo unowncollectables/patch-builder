@@ -28,5 +28,5 @@ Adding a game = a new entry in `GAMES` (p3ds_builder.py), a `<game>_build.sh` us
 **SD layout it writes:** `3ds/<game>3ds/` with the `.3dsx`, the user's `.nds`, `save_backups/`; `.cia` files in `cias/`.
 
 **Status:** Platinum path was tested with stand-in builds. SoulSilver path and the two-game window are new: step logic and ROM checks
-are tested, the long compile, `.cia` steps, the window itself and Windows/WSL parts are not (see README Status). The ports' own
+are tested, the window was driven headless with stub scripts; the long compile, real `.cia` steps and Windows/WSL parts are not (see README Status). The ports' own
 AGENTS.md files (in `3ds-platinum` and `Pokemon-Soulsilver-New3ds`) explain the games' code; start there for anything about the games themselves.
