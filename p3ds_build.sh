@@ -104,6 +104,7 @@ ensure_link() {
   say "Linking $LINK -> $ROOT"
   as_root mkdir -p /workspace && as_root ln -sfn "$ROOT" "$LINK" && return 0
   die "cannot create $LINK (needs root). Run the 'Install tools' step, or: sudo mkdir -p /workspace && sudo ln -sfn '$ROOT' $LINK"
+  hint "A one-time setup step is missing. Open Advanced, press Reinstall tools, then press the button again."
 }
 
 # ------------------------------------------------------------------------------------------------ check
@@ -165,17 +166,21 @@ step_setup() {
   export DEBIAN_FRONTEND=noninteractive
   say "Installing system packages..."
   as_root apt-get update -qq || { hint "Could not download tools. Check that this computer is online, then press the button again."; return 1; }
-  as_root apt-get install -y -qq make git patch python3 python3-pip build-essential rsync imagemagick curl wget xz-utils ca-certificates gnupg >/dev/null || return 1
+  as_root apt-get install -y -qq make git patch python3 python3-pip build-essential rsync imagemagick curl wget xz-utils ca-certificates gnupg >/dev/null \
+    || { die "apt-get install failed (output above)"; hint "Installing the Linux build tools failed. Check that this computer is online, wait a few minutes (another installer may be running), then press the button again."; return 1; }
   if [ ! -x "$DKP/devkitARM/bin/arm-none-eabi-gcc" ]; then
     say "Installing devkitPro (official installer)..."
     if ! command -v dkp-pacman >/dev/null; then
       tmp=$(mktemp -d); ( cd "$tmp" && wget -q https://apt.devkitpro.org/install-devkitpro-pacman && chmod +x install-devkitpro-pacman \
-        && as_root ./install-devkitpro-pacman ) || return 1
+        && as_root ./install-devkitpro-pacman ) \
+        || { die "devkitPro installer failed (output above)"; hint "Could not install devkitPro (the 3DS compiler). Check that this computer is online, then press the button again."; return 1; }
     fi
-    as_root dkp-pacman -Sy --noconfirm 3ds-dev || return 1
+    as_root dkp-pacman -Sy --noconfirm 3ds-dev \
+      || { die "dkp-pacman -S 3ds-dev failed (output above)"; hint "Could not download the 3DS compiler (devkitPro). Its servers may be busy; wait a few minutes and press the button again."; return 1; }
   else ok "devkitARM already installed"; fi
   say "Installing Python modules (ndspy, pillow)..."
-  as_root python3 -m pip install -q --break-system-packages ndspy pillow 2>/dev/null || as_root python3 -m pip install -q ndspy pillow || return 1
+  as_root python3 -m pip install -q --break-system-packages ndspy pillow 2>/dev/null || as_root python3 -m pip install -q ndspy pillow \
+    || { die "pip install ndspy pillow failed (output above)"; hint "Could not install two small Python modules (ndspy, pillow). Check that this computer is online, then press the button again."; return 1; }
   ensure_link || return 1
   say "Setup done."
 }
@@ -197,7 +202,7 @@ step_stage() {
   ok "Platinum ROM verified and staged"
   ss="${P3DS_SOULSILVER:-}"
   if [ -n "$ss" ]; then
-    [ -f "$ss" ] || { die "SoulSilver file not found: $ss"; return 1; }
+    [ -f "$ss" ] || { die "SoulSilver file not found: $ss"; hint "The SoulSilver file you picked is gone (moved or renamed). Pick it again, or clear that box (it is optional)."; return 1; }
     code=$(dd if="$ss" bs=1 skip=12 count=4 2>/dev/null)
     [ "$code" = IPGE ] || { die "that is not a US SoulSilver ROM (game code '$code', expected IPGE)"; hint "The SoulSilver file is not US SoulSilver. Clear that box (it is optional) or pick the right file."; return 1; }
     [ "$(readlink -f "$ss")" = "$(readlink -f "$SS_ROM")" ] || cp -f "$ss" "$SS_ROM"
@@ -245,14 +250,15 @@ step_pspoke() {
 # ------------------------------------------------------------------------------------------------ full build
 step_full() {
   ensure_link || return 1
-  [ -f "$BASE_ROM" ] || { die "Platinum ROM not staged - run the 'stage' step"; return 1; }
-  [ -d "$ROOT/pspoke/.git" ] || { die "pspoke not prepared - run the 'pspoke' step"; return 1; }
-  [ -x "$DKP/devkitARM/bin/arm-none-eabi-gcc" ] || { die "devkitARM missing - run 'setup'"; return 1; }
+  [ -f "$BASE_ROM" ] || { die "Platinum ROM not staged - run the 'stage' step"; hint "Pick your Pokemon Platinum .nds file in box 1 and press the button again."; return 1; }
+  [ -d "$ROOT/pspoke/.git" ] || { die "pspoke not prepared - run the 'pspoke' step"; hint "The build was started half-way. Press Build and install (it runs every step in order)."; return 1; }
+  [ -x "$DKP/devkitARM/bin/arm-none-eabi-gcc" ] || { die "devkitARM missing - run 'setup'"; hint "The 3DS compiler is not installed. Open Advanced, press Reinstall tools, then press the button again."; return 1; }
   fix_line_endings
   g=$(free_gb "$ROOT"); [ -n "$g" ] && [ "$g" -lt 5 ] && { die "only ${g} GB free"; hint "The disk is almost full (${g} GB free). Free up about 10 GB and press the button again."; return 1; }
   build_env; cd "$LINK" || return 1
   say "Full from-scratch build. This takes a long time; the log keeps scrolling while it works."
-  bash scripts/rebuild_all.sh || { die "rebuild_all.sh failed - the real error is higher up in the log"; return 1; }
+  bash scripts/rebuild_all.sh || { die "rebuild_all.sh failed - the real error is higher up in the log"
+    hint "The long first build stopped. Press the button again once (a dropped download is the usual cause); if it stops at the same place, press 'Copy details for help' and open a GitHub issue."; return 1; }
   pspoke_fp > "$FULL_FP_FILE"
   rm -rf "$LINK/pspoke/.work.bak"
   rm -f "$LINK/pspoke/.work/rebuild_pending.txt"
@@ -262,7 +268,7 @@ step_full() {
 # ------------------------------------------------------------------------------------------------ patches
 step_patches() {
   ensure_link || return 1
-  [ -d "$ROOT/pspoke/.work/tree/test_out" ] || { die "no generated tree yet - run the 'full' step first"; return 1; }
+  [ -d "$ROOT/pspoke/.work/tree/test_out" ] || { die "no generated tree yet - run the 'full' step first"; hint "The game has not had its first full build yet. Press Build and install (not Quick rebuild)."; return 1; }
   args=("$ROOT")
   [ "${P3DS_LEGACY:-0}" = 1 ] && args+=(--legacy)
   fix_line_endings
@@ -285,12 +291,12 @@ step_relink() {
   ensure_link || return 1
   build_env
   O="$T/native-audio-app/overlays"
-  [ -d "$O" ] || { die "no generated tree yet - run the 'full' step first"; return 1; }
+  [ -d "$O" ] || { die "no generated tree yet - run the 'full' step first"; hint "The game has not had its first full build yet. Press Build and install (not Quick rebuild)."; return 1; }
   pend="$LINK/pspoke/.work/rebuild_pending.txt"
   if [ -s "$pend" ]; then
     list=$(grep -v '^__ALL__$' "$pend" | tr '\n' ' ')
     say "Recompiling $(echo $list | wc -w) overlay source file(s)..."
-    ( cd "$O" && python3 rebuild_obj.py $list ) || { die "overlay compile failed (error above)"; return 1; }
+    ( cd "$O" && python3 rebuild_obj.py $list ) || { die "overlay compile failed (error above)"; hint "A patched game file did not compile. The first 'error:' line in the details names the file; if you did not change any patch, open a GitHub issue with the details."; return 1; }
     if grep -q '^__ALL__$' "$pend"; then
       say "Headers changed: refreshing internal overlays..."
       ( cd "$O" && python3 internal.py && cp -f libplatinum-overlays.a libplatinum-overlays.a.base ) || { die "internal overlay step failed"; return 1; }
@@ -302,7 +308,7 @@ step_relink() {
     && APP=$(sed -n 's/^APPOBJS:= *//p' "$LINK/platinum3ds/full/Makefile") \
     && make $APP && psp-objcopy --weaken-symbol=getlocalhost offline.o \
     && make -C ../native-render-opt native_gpu.o GPU2D_Soft.o \
-    && make -C ../native-stack-render g3_handler.o frontend.o ) || { die "native object build failed (error above)"; return 1; }
+    && make -C ../native-stack-render g3_handler.o frontend.o ) || { die "native object build failed (error above)"; hint "Part of the port did not compile. Press the button again once; if it fails the same way, press 'Copy details for help' and open a GitHub issue."; return 1; }
   say "Linking..."
   ( cd "$LINK/platinum3ds/full" && rm -f platinum3ds_full.elf && make ) || { die "link failed (error above)"; hint "The game did not link. The first red 'error' line in the details is the cause."; return 1; }
   [ -f "$OUT3DSX" ] || { die "no .3dsx produced"; return 1; }
@@ -312,7 +318,8 @@ step_relink() {
 # ------------------------------------------------------------------------------------------------ followers
 step_followers() {
   [ -f "$SS_ROM" ] || { say "No SoulSilver ROM staged - skipping followers.bin (optional)."; return 0; }
-  python3 -I "$ROOT/followers/extract.py" "$SS_ROM" "$ROOT/platinum3ds/full/followers.bin" || { die "followers extraction failed"; return 1; }
+  python3 -I "$ROOT/followers/extract.py" "$SS_ROM" "$ROOT/platinum3ds/full/followers.bin" || { die "followers extraction failed"
+    hint "Making the following-Pokemon sprites from your SoulSilver file failed. Clear the SoulSilver box (it is optional) to build without them."; return 1; }
   ok "followers.bin created"
 }
 
@@ -335,7 +342,7 @@ step_deploy() {
   sd="${P3DS_SD:-}"
   [ -n "$sd" ] || { say "No SD card folder selected - skipping copy. Your build is at: $OUT3DSX"; return 0; }
   [ -d "$sd" ] || { die "SD card folder not found: $sd"; hint "The SD card is not plugged in (or its drive letter changed). Plug it in, pick it in box 2, press the button again."; return 1; }
-  [ -f "$OUT3DSX" ] || { die "nothing built yet"; return 1; }
+  [ -f "$OUT3DSX" ] || { die "nothing built yet"; hint "There is no finished game to copy yet. Press Build and install."; return 1; }
   [ -d "$sd/Nintendo 3DS" ] || [ -d "$sd/3ds" ] || say "  [!]       This does not look like a 3DS SD card (no 'Nintendo 3DS' or '3ds' folder). Copying anyway."
   need=$(( $(stat -c %s "$OUT3DSX") + 140000000 )); have=$(df -Pk "$sd" 2>/dev/null | awk 'NR==2 {print $4*1024}')
   [ -n "$have" ] && [ "$have" -lt "$need" ] && { die "not enough space on the SD card"; hint "The SD card is full. Free up about 200 MB on it and press the button again."; return 1; }

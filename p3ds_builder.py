@@ -303,7 +303,7 @@ def explain(log_text, script_hint, failed_step):
     if m:
         return "The game code did not compile. First error: " + m.group(0).strip()[:220]
     where = FRIENDLY.get(failed_step, failed_step or "the build")
-    return "Something went wrong while %s. Press 'Copy details for help' and paste it to Claude." % where.lower()
+    return "Something went wrong while %s. Press 'Copy details for help' and paste it into a GitHub issue (or to an AI helper)." % where.lower()
 
 
 def load_settings():
@@ -474,7 +474,7 @@ def run_gui():
         text = log.get("1.0", "end")
         root.clipboard_clear()
         root.clipboard_append(text)
-        messagebox.showinfo("Copied", "The details are copied. Paste them to Claude (or any AI helper).\nThey are also saved in:\n" + LAST_LOG)
+        messagebox.showinfo("Copied", "The details are copied. Paste them into a GitHub issue for the game you were building (or to an AI helper).\nThey are also saved in:\n" + LAST_LOG)
 
     def open_folder(p):
         try:
