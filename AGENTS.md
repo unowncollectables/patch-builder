@@ -4,7 +4,7 @@
 Platinum (`3ds-platinum`) and SoulSilver (`Pokemon-Soulsilver-New3ds`). It does not contain either port. It downloads the
 projects, installs the build tools, compiles, and copies the result to the SD card. GPL-3.0, personal and experimental.
 
-**Rules:** never commit ROMs, saves, extracted assets or builds (the user picks their own `.nds`; it is read from where it is
+**Rules:** keep the dry-run-before-change behaviour of the patch installer (all-or-nothing); never commit ROMs, saves, extracted assets or builds (the user picks their own `.nds`; it is read from where it is
 or copied only onto their SD card). A save on the SD card is backed up before every install and never overwritten. Work in a
 branch, PR to main, small diffs. Keep the window plain-English: every failure should end in one sentence telling a non-developer
 what to do (`##HINT:` lines from the scripts, `HINTS` in `p3ds_builder.py`).
@@ -30,3 +30,5 @@ Adding a game = a new entry in `GAMES` (p3ds_builder.py), a `<game>_build.sh` us
 **Status:** Platinum path was tested with stand-in builds. SoulSilver path and the two-game window are new: step logic and ROM checks
 are tested, the window was driven headless with stub scripts; the long compile, real `.cia` steps and Windows/WSL parts are not (see README Status). The ports' own
 AGENTS.md files (in `3ds-platinum` and `Pokemon-Soulsilver-New3ds`) explain the games' code; start there for anything about the games themselves.
+
+For project-wide rules (save safety, one-build rule, toggle rule) see the SoulSilver repo's AGENTS.md.
