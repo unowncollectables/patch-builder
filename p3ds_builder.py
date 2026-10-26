@@ -128,6 +128,18 @@ def wrap_script(script, root):
     return ["pkexec", "bash", "-c", script] if not sudo_ok() and which("pkexec") else ["sudo", "-n", "bash", "-c", script]
 
 
+def sd_mount_command(sd):
+    """Windows only: argv that mounts drive X: at /mnt/x inside WSL if WSL cannot see it yet (None if not a drive path)."""
+    m = re.match(r"^([A-Za-z]):", sd or "")
+    if not m:
+        return None
+    L = m.group(1).lower()
+    script = ('d=/mnt/%s; mkdir -p "$d"; if [ -z "$(ls -A "$d" 2>/dev/null)" ]; then umount "$d" 2>/dev/null; '
+              'mount -t drvfs %s: "$d" && echo "  [ok]      SD card %s: mounted at $d" '
+              '|| echo "  (could not mount %s: in WSL)"; else echo "  [ok]      SD card %s: is visible at $d"; fi; true') % (L, L.upper(), L.upper(), L.upper(), L.upper())
+    return ["wsl.exe", "-u", "root", "--", "bash", "-c", script]
+
+
 def cancel_command():
     kill = 'for f in /tmp/p3ds_builder.*.pid; do [ -f "$f" ] && kill -TERM -- -"$(cat "$f")" 2>/dev/null; rm -f "$f"; done; true'
     if IS_WIN:
@@ -687,6 +699,9 @@ def run_gui():
         return rc == 0 and not st["cancel"], needs, rc
 
     def run_steps(c, game, needs_root, steps):
+        if IS_WIN and "deploy" in steps and sd_mount_command(c.get("sd", "")):
+            # A card plugged in after WSL started is often not visible under /mnt/<letter>; mount it (as admin) first.
+            run_argv(sd_mount_command(c["sd"]), "make the SD card visible to the builder (as admin)", game)
         ok, needs, _ = run_argv(build_command(c, needs_root, steps, legacy.get(), game),
                                 "%s: %s%s" % (GAMES[game]["name"], " ".join(steps), " (as admin)" if needs_root else ""), game)
         return ok, needs
