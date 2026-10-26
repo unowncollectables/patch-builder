@@ -26,6 +26,15 @@ No game files are in this repo or in the download. Everything happens on your co
 7. When it says **Installed!**, put the SD card back in the 3DS, open the **Homebrew Launcher** and start **Platinum 3DS**.
    For a HOME Menu icon, open **FBI** > SD > `cias` > `platinum3ds.cia` > Install.
 
+### Updating (you already have it installed)
+
+- Press the blue **Update** button. It gets the newest version of the ticked game(s) from GitHub, shows what's new
+  (or "Already up to date"), rebuilds and copies to the SD card the same way as **Build and install**.
+  Your game files, the build cache and your save are never touched; the save is backed up before every copy.
+- **Build and install** also checks GitHub for game updates each time. To stop that, tick **Advanced > Offline**.
+- If the window says **"A newer builder is available"**, click it and download the new `Pokemon3DSBuilder.exe`.
+- Your own edits to a project folder are kept with `git stash` before an update (power users: `git stash list`).
+
 ### Where the files go on the SD card
 
 | File | Goes in |

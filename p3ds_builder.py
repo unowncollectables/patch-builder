@@ -8,7 +8,11 @@ game(s) and copies them to the card (optionally also a HOME Menu .cia). Everythi
 On Windows it runs the build inside WSL2 (wsl.exe); on Linux it runs bash directly.
 Package as an .exe with build_exe.bat (PyInstaller). Standard library only.
 """
-import hashlib, json, os, re, string, subprocess, sys, threading, queue
+import hashlib, json, os, re, string, subprocess, sys, threading, queue, urllib.request, webbrowser
+
+VERSION = "1.0.4"   # bump before tagging a release; compared with the newest GitHub release
+RELEASES_API = "https://api.github.com/repos/unowncollectables/patch-builder/releases/latest"
+RELEASES_PAGE = "https://github.com/unowncollectables/patch-builder/releases/latest"
 
 IS_WIN = os.name == "nt"
 HERE = os.path.dirname(os.path.abspath(sys.argv[0] if getattr(sys, "frozen", False) else __file__))
@@ -113,7 +117,7 @@ def build_command(cfg, root, steps, legacy=False, game="platinum"):
 
 def get_command(cfg, game, what=None, root=False):
     """argv that downloads/updates a project folder (p3ds_get.sh); what='ensure-git' installs git as root."""
-    exports = []
+    exports = ["export P3DS_OFFLINE=1"] if cfg.get("offline") else []
     if cfg.get(GAMES[game]["repo"]):
         exports.append("export P3DS_DEST=" + path_expr(cfg[GAMES[game]["repo"]]))
     script = "; ".join(exports + ["exec bash " + path_expr(os.path.join(SCRIPTS, "p3ds_get.sh")) + " " + (what or game)])
@@ -138,6 +142,20 @@ def sd_mount_command(sd):
               'mount -t drvfs %s: "$d" && echo "  [ok]      SD card %s: mounted at $d" '
               '|| echo "  (could not mount %s: in WSL)"; else echo "  [ok]      SD card %s: is visible at $d"; fi; true') % (L, L.upper(), L.upper(), L.upper(), L.upper())
     return ["wsl.exe", "-u", "root", "--", "bash", "-c", script]
+
+
+def newer_release():
+    """(tag, url) of a newer builder release on GitHub, or None (also None when offline or on any error)."""
+    try:
+        with urllib.request.urlopen(urllib.request.Request(RELEASES_API, headers={"User-Agent": "p3ds-builder"}), timeout=8) as r:
+            d = json.load(r)
+        tag = d.get("tag_name", "")
+        ver = lambda t: tuple(int(x) for x in re.findall(r"\d+", t))
+        if tag and ver(tag) > ver(VERSION):
+            return tag, d.get("html_url") or RELEASES_PAGE
+    except Exception:
+        pass
+    return None
 
 
 def cancel_command():
@@ -333,7 +351,8 @@ def load_settings():
         d = {}
     out = {k: d.get(k, "") for k in FIELDS}
     out["legacy"] = bool(d.get("legacy"))
-    out["cia"] = bool(d.get("cia", True))   # beginners want both the .3dsx and the HOME Menu .cia
+    out["cia"] = bool(d.get("cia", True))
+    out["offline"] = bool(d.get("offline"))   # beginners want both the .3dsx and the HOME Menu .cia
     out["want_plat"] = bool(d.get("want_plat", True))
     out["want_ss"] = bool(d.get("want_ss", False))
     return out
@@ -385,7 +404,7 @@ def run_gui():
         sys.exit(1)
 
     root = tk.Tk()
-    root.title("Pokemon 3DS Builder")
+    root.title("Pokemon 3DS Builder v" + VERSION)
     root.geometry("780x820")
     root.minsize(640, 600)
     cfg = load_settings()
@@ -398,6 +417,7 @@ def run_gui():
             cfg["sd"] = cards[0]
     vars_ = {k: tk.StringVar(value=cfg.get(k, "")) for k in FIELDS}
     legacy = tk.BooleanVar(value=cfg["legacy"])
+    offline = tk.BooleanVar(value=cfg["offline"])
     want_plat = tk.BooleanVar(value=cfg["want_plat"])
     want_ss = tk.BooleanVar(value=cfg["want_ss"])
     want_cia = tk.BooleanVar(value=cfg["cia"])
@@ -480,7 +500,18 @@ def run_gui():
     go = tk.Button(outer, text="Build and install", font=(big[0], 15, "bold"), bg="#2da44e", fg="white",
                    activebackground="#2c974b", activeforeground="white", relief="flat", padx=20, pady=10,
                    cursor="hand2", command=lambda: start("auto"))
-    go.pack(fill="x", pady=(4, 8))
+    go.pack(fill="x", pady=(4, 4))
+    upd = tk.Button(outer, text="Update  (get the newest version of the game(s), rebuild, copy to the SD card)",
+                    font=(big[0], 12, "bold"), bg="#0969da", fg="white", activebackground="#0860ca", activeforeground="white",
+                    relief="flat", padx=16, pady=6, cursor="hand2", command=lambda: start("update"))
+    upd.pack(fill="x", pady=(0, 8))
+    newer_lbl = tk.Label(outer, text="", fg="#0969da", cursor="hand2", font=(big[0], 11, "bold", "underline"))
+
+    def check_newer():
+        r = newer_release()
+        if r:
+            q.put(("newer", r[0], r[1]))
+    threading.Thread(target=check_newer, daemon=True).start()
 
     prog = ttk.Progressbar(outer, mode="determinate", maximum=100)
     prog.pack(fill="x")
@@ -530,6 +561,8 @@ def run_gui():
     field(adv, "repo", "Platinum project folder (3ds-platinum)", "dir")
     field(adv, "ssrepo", "SoulSilver project folder (Pokemon-Soulsilver-New3ds)", "dir")
     ttk.Checkbutton(adv, text="Also apply the older Platinum patches/*.patch", variable=legacy).pack(anchor="w")
+    ttk.Checkbutton(adv, text="Offline: do not check GitHub for game updates on 'Build and install' (the Update button still does)",
+                    variable=offline).pack(anchor="w")
     abar = ttk.Frame(adv)
     abar.pack(fill="x", pady=(6, 0))
     adv_buttons = []
@@ -570,6 +603,8 @@ def run_gui():
         log.configure(state="disabled")
 
     def show_banner(ok, text, folder=""):
+        if st.get("news"):
+            text = "What's new - " + "; ".join(st["news"]) + "\n" + text
         banner.configure(text=text, bg="#dafbe1" if ok else "#ffebe9", fg=GOOD if ok else BAD)
         banner.pack(fill="x", pady=(8, 0), before=folds)
         brow.pack(fill="x", pady=(4, 0), before=folds)
@@ -635,6 +670,7 @@ def run_gui():
     def current_cfg():
         c = {k: vars_[k].get().strip().strip('"') for k in FIELDS}
         c["want_plat"], c["want_ss"], c["cia"] = want_plat.get(), want_ss.get(), want_cia.get()
+        c["offline"] = offline.get()
         return c
 
     def set_busy(b):
@@ -642,6 +678,7 @@ def run_gui():
         for x in adv_buttons:
             x.configure(state="disabled" if b else "normal")
         go.configure(state="disabled" if b else "normal", bg="#94d3a2" if b else "#2da44e")
+        upd.configure(state="disabled" if b else "normal", bg="#8bb9f0" if b else "#0969da")
         cancel_btn.configure(state="normal" if b else "disabled")
 
     def cancel():
@@ -682,6 +719,10 @@ def run_gui():
                 continue
             if line.startswith("##HINT:"):
                 st["hint"] = line.strip()[7:]
+                continue
+            if line.startswith("##NEWS:"):
+                _, g, news = line.strip().split(":", 2)
+                st.setdefault("news", []).append("%s: %s" % (GAMES.get(g, {}).get("name", g), news))
                 continue
             if line.startswith("##PROJECT:") and game:
                 st["project"][game] = line.strip()[10:]
@@ -764,6 +805,9 @@ def run_gui():
         if st["busy"]:
             return
         c = current_cfg()
+        if pipe == "update":            # same as the big green button, but always fetches the latest from GitHub
+            c["offline"] = False
+            pipe = "auto"
         games = selected_games(c)
         if not games:
             messagebox.showwarning("Which game?", "Tick Pokemon Platinum, Pokemon SoulSilver, or both, in step 1.")
@@ -819,8 +863,9 @@ def run_gui():
             return
         d = dict(c)
         d["legacy"] = legacy.get()
+        d["offline"] = offline.get()
         save_settings(d)
-        st.update(cancel=False, hint="", failed="", installed=[], project={}, cia=c["cia"])
+        st.update(cancel=False, hint="", failed="", installed=[], project={}, cia=c["cia"], news=[])
         hide_banner()
         log.configure(state="normal")
         log.delete("1.0", "end")
@@ -894,6 +939,10 @@ def run_gui():
                     if a not in ("needs", "get"):
                         st["done_steps"] += 1
                     prog.configure(value=100.0 * st["done_steps"] / max(st["planned"], 1))
+                elif kind == "newer":
+                    newer_lbl.configure(text="A newer builder is available (%s, you have v%s). Click here to download it." % (a, VERSION))
+                    newer_lbl.bind("<Button-1>", lambda e, u=b: webbrowser.open(u))
+                    newer_lbl.pack(anchor="w", after=upd, pady=(0, 6))
                 elif kind == "project":
                     vars_[GAMES[a]["repo"]].set(b)
                 elif kind == "recheck":

@@ -19,11 +19,30 @@ case "$what" in
 esac
 command -v git >/dev/null || { echo "git is not installed"; exit 3; }
 dest="${P3DS_DEST:-$def}"
-if [ -d "$dest/.git" ]; then
-  if [ -z "$(git -C "$dest" status --porcelain --untracked-files=no)" ]; then
-    git -C "$dest" pull -q --ff-only 2>&1 && echo "  [ok]      $what project is up to date" || echo "  (could not update $dest; using what is there)"
+if [ -d "$dest/.git" ] && [ "${P3DS_OFFLINE:-}" = 1 ]; then
+  echo "  [ok]      offline mode: using $dest as it is (not checking GitHub)"
+elif [ -d "$dest/.git" ]; then
+  # Get the latest main. Only tracked source files change: ROMs, build cache (pspoke/, build/), followers.bin and the
+  # SD card are untracked/ignored or elsewhere, so they are never touched.
+  br=$(git -C "$dest" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##'); br=${br:-main}
+  if ! git -C "$dest" fetch -q origin "$br" 2>&1; then
+    echo "  (could not check GitHub for updates; using what is there)"
   else
-    echo "  (you have changes in $dest, so it was not updated)"
+    n=$(git -C "$dest" rev-list --count HEAD..FETCH_HEAD 2>/dev/null || echo 0)
+    if [ "$n" = 0 ]; then
+      echo "  [ok]      $what project: already up to date"; echo "##NEWS:$what:Already up to date"
+    else
+      if [ -n "$(git -C "$dest" status --porcelain --untracked-files=no)" ]; then
+        git -C "$dest" stash push -q -m "p3ds-builder update $(date +%Y%m%d_%H%M%S)" && echo "  (your own edits in $dest were saved with git stash before updating)"
+      fi
+      git -C "$dest" log --format='     - %s' -n 5 HEAD..FETCH_HEAD
+      if git -C "$dest" checkout -q -B "$br" FETCH_HEAD 2>&1 && git -C "$dest" reset -q --hard FETCH_HEAD; then
+        echo "  [ok]      $what project updated: $n new change(s)"
+        echo "##NEWS:$what:$n new change(s). Latest: $(git -C "$dest" log -1 --format=%s)"
+      else
+        echo "  (could not update $dest; using what is there)"
+      fi
+    fi
   fi
 elif [ -d "$dest/$marker" ]; then
   echo "  [ok]      using the project folder you picked: $dest"
