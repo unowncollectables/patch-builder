@@ -17,6 +17,8 @@ No game files are in this repo or in the download. Everything happens on your co
 1. Download **Pokemon3DSBuilder.exe** from the [Releases page](https://github.com/unowncollectables/patch-builder/releases) and double-click it.
    (Windows may say "Windows protected your PC": press **More info**, then **Run anyway**.)
 2. Tick **Pokemon Platinum**.
+   *Optional:* **following Pokemon** (your Pokemon walks behind you) need your **SoulSilver** game file too. Pick it in box 2b;
+   you do not have to tick SoulSilver. Without it, Platinum builds fine, just without following Pokemon.
 3. Press **Browse** and pick your `.nds` file. A **green tick** means it is the right one. A red cross tells you what is wrong.
 4. Put your 3DS SD card in the computer and press **Find it**. (You can skip this; then the files are just saved on the PC.)
 5. Press the big green **Build and install**. If Windows asks to install **WSL**, say yes and restart the PC when asked, then open the builder and press the button again.

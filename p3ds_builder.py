@@ -441,11 +441,15 @@ def run_gui():
     ttk.Checkbutton(grow, text="Pokemon Platinum", variable=want_plat).pack(side="left", padx=(0, 18))
     ttk.Checkbutton(grow, text="Pokemon SoulSilver", variable=want_ss).pack(side="left")
     ttk.Label(grow, text="  (both is fine)", foreground=MUTED).pack(side="left")
+    ttk.Label(outer, text="Optional: following Pokemon for Platinum (your Pokemon walks behind you, like in HeartGold/SoulSilver). "
+                          "It needs your SoulSilver game file too (box 2b). You do not have to build SoulSilver for this.",
+              foreground=MUTED, wraplength=720).pack(anchor="w", pady=(0, 8))
 
     games_area = ttk.Frame(outer)
     games_area.pack(fill="x")
     field(games_area, "platinum", "2a.  Your Pokemon Platinum game file (.nds, US Rev 1)", "file")
-    field(games_area, "soulsilver", "2b.  Your Pokemon SoulSilver game file (.nds, US)", "file")
+    field(games_area, "soulsilver", "2b.  Your Pokemon SoulSilver game file (.nds, US). Optional for Platinum: adds following Pokemon", "file")
+    follow_note = ttk.Label(games_area, text="", foreground=MUTED, wraplength=720)
     sd_row = field(outer, "sd", "3.  Your 3DS SD card (plugged into this computer)", "dir")
 
     def find_sd():
@@ -591,11 +595,20 @@ def run_gui():
 
     def refresh(*_):
         # a game's boxes only show while its tick is on (the Platinum box also takes SoulSilver's ROM for following Pokemon)
+        follow_note.pack_forget()
         for key, var in (("platinum", want_plat), ("soulsilver", want_ss)):
-            if var.get():
+            # the SoulSilver box also shows for Platinum alone: that file is what adds following Pokemon
+            if var.get() or (key == "soulsilver" and want_plat.get()):
                 boxes[key].pack(fill="x", pady=(0, 10))
             else:
                 boxes[key].pack_forget()
+        if want_plat.get():
+            if vars_["soulsilver"].get().strip():
+                follow_note.configure(text="Platinum will get following Pokemon from your SoulSilver file.")
+            else:
+                follow_note.configure(text="Platinum will build without following Pokemon. That is fine. To add them, pick your "
+                                           "SoulSilver file in 2b (optional).")
+            follow_note.pack(anchor="w", pady=(0, 10))
         check_rom("platinum")
         check_rom("soulsilver")
         set_check("sd", *sd_report(vars_["sd"].get().strip().strip('"')))
