@@ -356,8 +356,33 @@ step_cia() {
   ok "built $(stat -c %s "$ROOT/platinum3ds/full/platinum3ds_full.cia") bytes platinum3ds_full.cia"
 }
 
+# ------------------------------------------------------------------------------------------------ export
+# Copies the finished .3dsx / .cia to a normal Windows folder (P3DS_OUT, e.g. Documents\Pokemon 3DS Builds\Platinum\),
+# whether or not an SD card is picked. No game data (ROM, save) is copied there.
+step_export() {
+  [ -n "${P3DS_OUT:-}" ] || return 0
+  [ -f "$OUT3DSX" ] || return 0
+  local o="$P3DS_OUT/Platinum"
+  mkdir -p "$o" 2>/dev/null && [ -w "$o" ] || { die "cannot write to the output folder $o"; hint "Could not save the finished game in your output folder. Pick another folder in 'Output folder' and press the button again."; return 1; }
+  cp -f "$OUT3DSX" "$o/platinum3ds_full.3dsx" || { die "copy to the output folder failed"; hint "Could not save the finished game in your output folder. Check there is free space, then try again."; return 1; }
+  [ -f "$ROOT/platinum3ds/full/platinum3ds_full.cia" ] && [ "${P3DS_CIA:-0}" = 1 ] && cp -f "$ROOT/platinum3ds/full/platinum3ds_full.cia" "$o/platinum3ds.cia"
+  cat > "$o/How to put this on your 3DS.txt" <<'TXT'
+How to put this on your 3DS
+===========================
+1. Put your 3DS SD card in this computer.
+2. Homebrew Launcher version: copy platinum3ds_full.3dsx to  SD:\3ds\platinum3ds\
+   (also copy your own Platinum .nds there once, named platinum.nds). Start it from the Homebrew Launcher.
+3. HOME Menu version (optional): copy platinum3ds.cia to  SD:\cias\  then on the 3DS open FBI > SD > cias > platinum3ds.cia > Install.
+Your save (platinum.sav in SD:\3ds\platinum3ds\) is never touched by copying these files.
+TXT
+  sed -i 's/$/\r/' "$o/How to put this on your 3DS.txt" 2>/dev/null   # Windows line endings for Notepad
+  ok "saved to your output folder (Platinum)"
+  echo "##OUTPUT:Platinum"
+}
+
 # ------------------------------------------------------------------------------------------------ deploy
 step_deploy() {
+  step_export || return 1
   sd="${P3DS_SD:-}"
   [ -n "$sd" ] || [ "${P3DS_SD_WANTED:-}" != 1 ] || { die "an SD card was picked but its path did not reach the build"; hint "The SD card you picked could not be passed to the builder. Pick it again with Browse and press the button again."; return 1; }
   [ -n "$sd" ] || { say "No SD card folder selected - skipping copy. Your build is at: $OUT3DSX"; return 0; }

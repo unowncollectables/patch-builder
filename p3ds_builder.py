@@ -10,7 +10,7 @@ Package as an .exe with build_exe.bat (PyInstaller). Standard library only.
 """
 import hashlib, json, os, re, string, subprocess, sys, threading, queue, urllib.request, webbrowser
 
-VERSION = "1.0.5"   # bump before tagging a release; compared with the newest GitHub release
+VERSION = "1.0.6"   # bump before tagging a release; compared with the newest GitHub release
 RELEASES_API = "https://api.github.com/repos/unowncollectables/patch-builder/releases/latest"
 RELEASES_PAGE = "https://github.com/unowncollectables/patch-builder/releases/latest"
 
@@ -20,7 +20,8 @@ HERE = os.path.dirname(os.path.abspath(sys.argv[0] if getattr(sys, "frozen", Fal
 SCRIPTS = getattr(sys, "_MEIPASS", HERE)
 SETTINGS = os.path.join(os.path.expanduser("~"), ".p3ds_builder.json")
 LAST_LOG = os.path.join(os.path.expanduser("~"), "p3ds_builder_last_log.txt")
-FIELDS = ["repo", "ssrepo", "platinum", "soulsilver", "sd"]
+FIELDS = ["repo", "ssrepo", "platinum", "soulsilver", "out", "sd"]
+DEFAULT_OUT = os.path.join(os.path.expanduser("~"), "Documents", "Pokemon 3DS Builds")
 PLAT_SHA1 = "0862ec35b24de5c7e2dcb88c9eea0873110d755c"
 SS_SHA1 = "f8dc38ea20c17541a43b58c5e6d18c1732c7e582"   # pspoke's tested SoulSilver (US) dump; upstream.lock in the SoulSilver repo
 GAMES = {   # per game: the build script, the config field holding its project folder, a file that marks that folder
@@ -119,7 +120,7 @@ def build_command(cfg, root, steps, legacy=False, game="platinum"):
         exports.append("export P3DS_CIA=1")
     if cfg.get("sd"):
         exports.append("export P3DS_SD_WANTED=1")
-    for key, var in (("platinum", "P3DS_PLATINUM"), ("soulsilver", "P3DS_SOULSILVER"), ("sd", "P3DS_SD")):
+    for key, var in (("platinum", "P3DS_PLATINUM"), ("soulsilver", "P3DS_SOULSILVER"), ("sd", "P3DS_SD"), ("out", "P3DS_OUT")):
         if cfg.get(key):
             exports.append("export %s=%s" % (var, path_expr(cfg[key])))
     if legacy:
@@ -288,7 +289,7 @@ def find_sd_cards():
 
 def sd_report(path):
     if not path:
-        return None, "Optional. Without it, the game is built but not copied anywhere."
+        return None, "Optional. Without it, the game is still saved in the folder above."
     if not os.path.isdir(path):
         return False, "Folder not found. Is the SD card plugged in?"
     if os.path.isdir(os.path.join(path, "Nintendo 3DS")):
@@ -372,6 +373,7 @@ def load_settings():
     except Exception:
         d = {}
     out = {k: d.get(k, "") for k in FIELDS}
+    out["out"] = out["out"] or DEFAULT_OUT
     out["legacy"] = bool(d.get("legacy"))
     out["cia"] = bool(d.get("cia", True))
     out["offline"] = bool(d.get("offline"))   # beginners want both the .3dsx and the HOME Menu .cia
@@ -504,7 +506,8 @@ def run_gui():
     field(games_area, "platinum", "2a.  Your Pokemon Platinum game file (.nds, US Rev 1)", "file")
     field(games_area, "soulsilver", "2b.  Your Pokemon SoulSilver game file (.nds, US). Optional for Platinum: adds following Pokemon", "file")
     follow_note = ttk.Label(games_area, text="", foreground=MUTED, wraplength=720)
-    sd_row = field(outer, "sd", "3.  Your 3DS SD card (plugged into this computer)", "dir")
+    field(outer, "out", "3.  Where to save the finished game on this PC (the .cia and .3dsx always go here)", "dir")
+    sd_row = field(outer, "sd", "4.  Your 3DS SD card (optional, plugged into this computer)", "dir")
 
     def find_sd():
         cards = find_sd_cards()
@@ -693,6 +696,7 @@ def run_gui():
         c = {k: vars_[k].get().strip().strip('"') for k in FIELDS}
         c["want_plat"], c["want_ss"], c["cia"] = want_plat.get(), want_ss.get(), want_cia.get()
         c["offline"] = offline.get()
+        c["out"] = c.get("out") or DEFAULT_OUT
         return c
 
     def set_busy(b):
@@ -880,8 +884,8 @@ def run_gui():
             if ok is False and not messagebox.askyesno("SD card", text + "\n\nCopy the game there anyway?"):
                 return
         if pipe in ("auto", "full", "quick") and not c["sd"]:
-            if not messagebox.askyesno("No SD card", "No SD card is picked, so the game will be built but not copied "
-                                                     "anywhere.\n\nContinue without the SD card?"):
+            if not messagebox.askyesno("No SD card", "No SD card is picked, so the game will only be saved in your output folder "
+                                                     "(not copied to a card).\n\nContinue without the SD card?"):
                 return
         w = wsl_state()
         if w != "ok":
@@ -953,15 +957,15 @@ def run_gui():
                 messagebox.showinfo("All done!", "Your game is on the SD card.\n\n" + SD_STEPS)
             except Exception:
                 pass
-            show_banner(True, "Installed! Put the SD card back in your New 3DS, open the Homebrew Launcher and start %s.%s" % (names, more), "")
+            outd = c.get("out") or DEFAULT_OUT
+            show_banner(True, "Installed! Put the SD card back in your New 3DS, open the Homebrew Launcher and start %s.%s A copy is also saved in %s." % (names, more, outd), outd)
         else:
-            outs = []
-            for g in selected_games(c):
-                outs.append(game_out_dir(c[GAMES[g]["repo"]], g))
-            show_banner(True, "Built! No SD card was picked, so the game file(s) are in: " + "; ".join(outs), outs[0] if outs else "")
+            outd = c.get("out") or DEFAULT_OUT
+            show_banner(True, "Built! No SD card was picked. Your game is saved in: " + outd +
+                        "  (see 'How to put this on your 3DS.txt' there)", outd)
             try:
                 from tkinter import messagebox
-                messagebox.showinfo("Copy these files to your SD card", SD_STEPS + "\n\nYour built files are in:\n" + "\n".join(outs))
+                messagebox.showinfo("Copy these files to your SD card", SD_STEPS + "\n\nYour finished game is saved in:\n" + outd)
             except Exception:
                 pass
 
