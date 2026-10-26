@@ -10,7 +10,7 @@ Package as an .exe with build_exe.bat (PyInstaller). Standard library only.
 """
 import hashlib, json, os, re, string, subprocess, sys, threading, queue, urllib.request, webbrowser
 
-VERSION = "1.0.8"   # bump before tagging a release; compared with the newest GitHub release
+VERSION = "1.0.9"   # bump before tagging a release; compared with the newest GitHub release
 RELEASES_API = "https://api.github.com/repos/unowncollectables/patch-builder/releases/latest"
 RELEASES_PAGE = "https://github.com/unowncollectables/patch-builder/releases/latest"
 
@@ -510,8 +510,10 @@ def run_gui():
 
     root = tk.Tk()
     root.title("Pokemon 3DS Builder v" + VERSION)
-    root.geometry("780x820")
-    root.minsize(640, 600)
+    sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
+    root.geometry("%dx%d" % (min(800, sw - 40), min(860, sh - 80)))     # fits 1366x768 and 1080p
+    root.minsize(600, 420)
+    root.resizable(True, True)
     cfg = load_settings()
     for g in GAMES:
         if not cfg[GAMES[g]["repo"]]:
@@ -537,8 +539,31 @@ def run_gui():
     style = ttk.Style()
     style.configure("Step.TLabel", font=(big[0], 11, "bold"))
 
-    outer = ttk.Frame(root, padding=14)
-    outer.pack(fill="both", expand=True)
+    # The whole window scrolls (mouse wheel or scrollbar), so nothing is cut off on small screens.
+    scroll_canvas = tk.Canvas(root, highlightthickness=0, borderwidth=0)
+    vbar = ttk.Scrollbar(root, orient="vertical", command=scroll_canvas.yview)
+    scroll_canvas.configure(yscrollcommand=vbar.set)
+    vbar.pack(side="right", fill="y")
+    scroll_canvas.pack(side="left", fill="both", expand=True)
+    outer = ttk.Frame(scroll_canvas, padding=14)
+    outer_id = scroll_canvas.create_window((0, 0), window=outer, anchor="nw")
+    outer.bind("<Configure>", lambda e: scroll_canvas.configure(scrollregion=scroll_canvas.bbox("all")))
+    scroll_canvas.bind("<Configure>", lambda e: scroll_canvas.itemconfigure(outer_id, width=e.width))
+
+    def on_wheel(e):
+        if getattr(e, "num", 0) == 4:
+            d = -1
+        elif getattr(e, "num", 0) == 5:
+            d = 1
+        else:
+            d = -1 if e.delta > 0 else 1
+        w = root.winfo_containing(e.x_root, e.y_root)
+        if w is not None and w.winfo_class() == "Text":     # the log scrolls itself
+            return
+        scroll_canvas.yview_scroll(d * 3, "units")
+    root.bind_all("<MouseWheel>", on_wheel)
+    root.bind_all("<Button-4>", on_wheel)
+    root.bind_all("<Button-5>", on_wheel)
     ttk.Label(outer, text="Pokemon 3DS Builder", font=head).pack(anchor="w")
     ttk.Label(outer, text="Tick the game(s), pick the game file(s) you own and your SD card, then press the green button. "
                           "Your game files never leave this computer.",
@@ -709,6 +734,9 @@ def run_gui():
         log.configure(state="disabled")
 
     def show_banner(ok, text, folder=""):
+        if ok and st.get("head"):
+            text = text + "\nBuilt the latest version: " + "; ".join(
+                "%s commit %s (%s): %s" % (GAMES.get(g, {}).get("name", g), h[0][:7], h[1], h[2]) for g, h in st["head"].items())
         if st.get("news"):
             text = "Game code on GitHub - " + "; ".join(st["news"]) + "\n" + text
         banner.configure(text=text, bg="#dafbe1" if ok else "#ffebe9", fg=GOOD if ok else BAD)
@@ -834,6 +862,15 @@ def run_gui():
                 _, g, news = line.strip().split(":", 2)
                 st.setdefault("news", []).append("%s: %s" % (GAMES.get(g, {}).get("name", g), news))
                 continue
+            if line.startswith("##HEAD:"):
+                _, g, rest = line.strip().split(":", 2)
+                sha, date, title = (rest.split(" ", 2) + ["", ""])[:3]
+                st.setdefault("head", {})[g] = (sha, date, title)
+                continue
+            if line.startswith("##REMOTE:"):
+                _, g, sha = line.strip().split(":", 2)
+                st.setdefault("remote", {})[g] = sha
+                continue
             if line.startswith("##PROJECT:") and game:
                 st["project"][game] = line.strip()[10:]
                 q.put(("project", game, line.strip()[10:]))
@@ -887,6 +924,44 @@ def run_gui():
     def worker(pipe, c):
         if pipe == "clean":
             return clean_worker(c)
+        ok = build_once(pipe, c)
+        # Right before copying: is the project still the newest on GitHub? If something was pushed during the build,
+        # update and do a quick rebuild (at most 2 times), so the user always gets the latest version.
+        tries = 0
+        while ok and pipe == "auto" and not c.get("offline") and not st["cancel"] and tries < 2:
+            st["remote"] = {}
+            newer = []
+            for g in selected_games(c):
+                env = dict(c, offline=True)       # offline: only look, do not change the clone
+                run_argv(wrap_script("export P3DS_CHECK_REMOTE=1; " + get_command(env, g)[-1], False),
+                         "check GitHub for newer %s code" % GAMES[g]["name"], g)
+                r, h = st["remote"].get(g), st.get("head", {}).get(g, ("",))[0]
+                if r and h and r != h:
+                    newer.append(g)
+            if not newer:
+                break
+            tries += 1
+            q.put(("log", "\nNew game code was pushed during the build - updating and rebuilding (%d of 2)...\n" % tries, None))
+            ok = build_once(pipe, c)
+        if ok:
+            ok = copy_to_sd(pipe, c)
+        q.put(("done", ok, pipe))
+
+    def copy_to_sd(pipe, c):
+        ok = True
+        if IS_WIN and c.get("sd") and pipe in ("auto", "full", "quick") and not st["cancel"]:
+            for g in selected_games(c):
+                q.put(("log", "\n$ copy %s to the SD card (from Windows)\n" % GAMES[g]["name"], None))
+                q.put(("step", "deploy", None))
+                good, msg, d = sd_copy(g, c.get("out") or DEFAULT_OUT, c["sd"], c.get(g), lambda t: q.put(("log", t, None)))
+                if not good:
+                    st["hint"], st["failed"] = msg, "deploy"
+                    q.put(("log", "ERROR: " + msg + "\n", "bad"))
+                    return False
+                st["installed"].append((g, d))
+        return ok
+
+    def build_once(pipe, c):
         ok = True
         games = selected_games(c)
         plans = []      # (game, needs_root, steps)
@@ -927,18 +1002,7 @@ def run_gui():
                 ok = False
                 break
             ok, _ = run_steps(c, g, rt, steps)
-        if ok and IS_WIN and c.get("sd") and pipe in ("auto", "full", "quick") and not st["cancel"]:
-            for g in selected_games(c):
-                q.put(("log", "\n$ copy %s to the SD card (from Windows)\n" % GAMES[g]["name"], None))
-                q.put(("step", "deploy", None))
-                good, msg, d = sd_copy(g, c.get("out") or DEFAULT_OUT, c["sd"], c.get(g), lambda t: q.put(("log", t, None)))
-                if not good:
-                    st["hint"], st["failed"] = msg, "deploy"
-                    q.put(("log", "ERROR: " + msg + "\n", "bad"))
-                    ok = False
-                    break
-                st["installed"].append((g, d))
-        q.put(("done", ok, pipe))
+        return ok
 
     def start(pipe):
         if st["busy"]:
@@ -1001,7 +1065,7 @@ def run_gui():
         d["legacy"] = legacy.get()
         d["offline"] = offline.get()
         save_settings(d)
-        st.update(cancel=False, hint="", failed="", installed=[], project={}, cia=c["cia"], news=[])
+        st.update(cancel=False, hint="", failed="", installed=[], project={}, cia=c["cia"], news=[], head={}, remote={})
         hide_banner()
         log.configure(state="normal")
         log.delete("1.0", "end")

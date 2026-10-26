@@ -22,14 +22,21 @@ dest="${P3DS_DEST:-$def}"
 if [ -d "$dest/.git" ] && [ "${P3DS_OFFLINE:-}" = 1 ]; then
   echo "  [ok]      offline mode: using $dest as it is (not checking GitHub)"
 elif [ -d "$dest/.git" ]; then
+  # Make sure this clone points at the right project (only the remote changes; ROMs, saves, build cache stay).
+  cur=$(git -C "$dest" remote get-url origin 2>/dev/null)
+  norm() { printf %s "$1" | sed -E 's#^git@github.com:#https://github.com/#; s#\.git$##; s#/$##' | tr A-Z a-z; }
+  if [ "$(norm "$cur")" != "$(norm "$url")" ]; then
+    echo "  [!]       $dest pointed at '${cur:-nothing}'; switching it to $url"
+    git -C "$dest" remote remove origin 2>/dev/null; git -C "$dest" remote add origin "$url"
+  fi
   # Get the latest main. Only tracked source files change: ROMs, build cache (pspoke/, build/), followers.bin and the
   # SD card are untracked/ignored or elsewhere, so they are never touched.
-  br=$(git -C "$dest" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##'); br=${br:-main}
+  br=main
   if ! git -C "$dest" fetch -q origin "$br" 2>&1; then
     echo "  (could not check GitHub for updates; using what is there)"
   else
     n=$(git -C "$dest" rev-list --count HEAD..FETCH_HEAD 2>/dev/null || echo 0)
-    if [ "$n" = 0 ]; then
+    if [ "$(git -C "$dest" rev-parse HEAD)" = "$(git -C "$dest" rev-parse FETCH_HEAD)" ] && [ "$(git -C "$dest" rev-parse --abbrev-ref HEAD)" = "$br" ]; then
       echo "  [ok]      $what project: already up to date"; echo "##NEWS:$what:Already up to date"
     else
       if [ -n "$(git -C "$dest" status --porcelain --untracked-files=no)" ]; then
@@ -37,7 +44,7 @@ elif [ -d "$dest/.git" ]; then
       fi
       git -C "$dest" log --format='     - %s' -n 5 HEAD..FETCH_HEAD
       if git -C "$dest" checkout -q -B "$br" FETCH_HEAD 2>&1 && git -C "$dest" reset -q --hard FETCH_HEAD; then
-        echo "  [ok]      $what project updated: $n new change(s)"
+        echo "  [ok]      $what project is now at the latest $br ($n new change(s))"
         echo "##NEWS:$what:$n new change(s). Latest: $(git -C "$dest" log -1 --format=%s)"
       else
         echo "  (could not update $dest; using what is there)"
@@ -60,5 +67,10 @@ else
   echo "Downloading $url ..."
   git clone -q "$url" "$dest.partial" 2>&1 && mv "$dest.partial" "$dest" || { rm -rf "$dest.partial"; hint "Could not download the project. Check that this computer is online, then press the button again."; exit 1; }
   echo "  [ok]      downloaded to $dest"
+fi
+[ -d "$dest/.git" ] && echo "##HEAD:$what:$(git -C "$dest" log -1 --format='%H %cs %s')"
+if [ "${P3DS_CHECK_REMOTE:-}" = 1 ] && [ -d "$dest/.git" ]; then
+  r=$(git ls-remote -q "$url" refs/heads/main 2>/dev/null | cut -f1)
+  [ -n "$r" ] && echo "##REMOTE:$what:$r"
 fi
 echo "##PROJECT:$dest"
