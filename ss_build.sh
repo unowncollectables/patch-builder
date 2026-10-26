@@ -71,7 +71,7 @@ step_check() {
   say "SoulSilver project folder : $ROOT"
   g=$(free_gb "$ROOT"); [ -n "$g" ] && { [ "$g" -ge 8 ] && ok "free disk space ${g} GB" || miss "only ${g} GB free disk space (the build needs about 8 GB)"; }
   for c in git make patch rsync curl python3; do command -v $c >/dev/null && ok $c || miss $c; done
-  python3 -c 'import ndspy' 2>/dev/null && ok "python ndspy" || miss "python ndspy  (pip install ndspy)"
+  python3 -I -c 'import ndspy' 2>/dev/null && ok "python ndspy" || miss "python ndspy  (pip install ndspy)"
   [ -x "$DKP/devkitARM/bin/arm-none-eabi-gcc" ] && ok "devkitARM" || miss "devkitARM"
   [ -f "$DKP/libctru/include/3ds.h" ] && ok libctru || miss libctru
   [ -f "$DKP/libctru/include/citro3d.h" ] && ok citro3d || miss citro3d
@@ -90,7 +90,7 @@ step_check() {
 step_needs() {
   local tools=ok
   for c in git make patch rsync curl python3 sha1sum; do command -v $c >/dev/null || tools=missing; done
-  python3 -c 'import ndspy' 2>/dev/null || tools=missing
+  python3 -I -c 'import ndspy, PIL, numpy' 2>/dev/null || tools=missing
   for f in "$DKP/devkitARM/bin/arm-none-eabi-gcc" "$DKP/libctru/include/3ds.h" "$DKP/libctru/include/citro3d.h" "$DKP/tools/bin/3dsxtool" "$DKP/tools/bin/picasso"; do
     [ -e "$f" ] || tools=missing
   done
@@ -116,8 +116,8 @@ step_setup() {
     fi
     as_root dkp-pacman -Sy --noconfirm 3ds-dev || return 1
   else ok "devkitARM already installed"; fi
-  say "Installing Python modules (ndspy, pillow)..."
-  as_root python3 -m pip install -q --break-system-packages ndspy pillow 2>/dev/null || as_root python3 -m pip install -q ndspy pillow || return 1
+  say "Installing Python modules (ndspy, pillow, numpy)..."
+  as_root python3 -m pip install -q --break-system-packages ndspy pillow numpy 2>/dev/null || as_root python3 -m pip install -q ndspy pillow numpy || return 1
   say "Setup done."
 }
 
