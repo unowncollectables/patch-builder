@@ -6,13 +6,14 @@
 set -uo pipefail
 if [ "${1:-}" = "--env-b64" ]; then eval "$(printf %s "${2:-}" | base64 -d)"; shift 2; fi
 what="${1:-}"
+export GIT_TERMINAL_PROMPT=0   # never sit waiting for a GitHub username a beginner does not have
 hint() { printf '##HINT:%s\n' "$*"; }
 case "$what" in
   ensure-git)
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq && apt-get install -y -qq git ca-certificates >/dev/null || { hint "Could not install git. Check that this computer is online."; exit 1; }
     exit 0 ;;
-  platinum)   url=https://github.com/unowncollectables/3ds-platinum;            def="$HOME/3ds-platinum";            marker=work_patches ;;
+  platinum)   url=${P3DS_PLATINUM_URL:-https://github.com/unowncollectables/3ds-platinum};            def="$HOME/3ds-platinum";            marker=work_patches ;;
   soulsilver) url=https://github.com/unowncollectables/Pokemon-Soulsilver-New3ds; def="$HOME/Pokemon-Soulsilver-New3ds"; marker=pspoke-patches ;;
   *) echo "usage: $0 platinum|soulsilver|ensure-git" >&2; exit 2 ;;
 esac
@@ -28,6 +29,15 @@ elif [ -d "$dest/$marker" ]; then
   echo "  [ok]      using the project folder you picked: $dest"
 else
   [ -e "$dest" ] && [ -n "$(ls -A "$dest" 2>/dev/null)" ] && { echo "ERROR: $dest exists and is not the project"; hint "The folder $dest already exists but is not the project. Pick the right folder in Advanced, or remove it."; exit 1; }
+  if ! git ls-remote -q "$url" >/dev/null 2>&1; then
+    if git ls-remote -q https://github.com/git/git HEAD >/dev/null 2>&1; then
+      echo "ERROR: $url cannot be reached (the Platinum project is not public, or it moved)."
+      hint "The $what project is not public yet, so it cannot be downloaded. Nothing is wrong with your computer or game file. Wait for the public release, then press the button again."
+    else
+      hint "Could not reach GitHub. Check that this computer is online, then press the button again."
+    fi
+    exit 1
+  fi
   echo "Downloading $url ..."
   git clone -q "$url" "$dest.partial" 2>&1 && mv "$dest.partial" "$dest" || { rm -rf "$dest.partial"; hint "Could not download the project. Check that this computer is online, then press the button again."; exit 1; }
   echo "  [ok]      downloaded to $dest"
