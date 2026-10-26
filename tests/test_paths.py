@@ -26,6 +26,17 @@ class DrivePaths(unittest.TestCase):
             b.IS_WIN = old
 
 
+class OutputFolder(unittest.TestCase):
+    def test_out_exported(self):
+        old = b.IS_WIN
+        b.IS_WIN = True
+        try:
+            cmd = b.build_command({"repo": "/home/me/3ds-platinum", "out": "C:\\Users\\me\\Documents\\Pokemon 3DS Builds"}, False, ["deploy"])
+            self.assertIn("export P3DS_OUT='/mnt/c/Users/me/Documents/Pokemon 3DS Builds'", cmd[-1])
+        finally:
+            b.IS_WIN = old
+
+
 class OutDirs(unittest.TestCase):
     def test_out_dir(self):
         self.assertEqual(b.game_out_dir("/home/monke/3ds-platinum", "platinum"), "/home/monke/3ds-platinum/platinum3ds/full")

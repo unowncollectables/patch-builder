@@ -20,10 +20,12 @@ No game files are in this repo or in the download. Everything happens on your co
    *Optional:* **following Pokemon** (your Pokemon walks behind you) need your **SoulSilver** game file too. Pick it in box 2b;
    you do not have to tick SoulSilver. Without it, Platinum builds fine, just without following Pokemon.
 3. Press **Browse** and pick your `.nds` file. A **green tick** means it is the right one. A red cross tells you what is wrong.
-4. Put your 3DS SD card in the computer and press **Find it**. (You can skip this; then the files are just saved on the PC.)
-5. Press the big green **Build and install**. If Windows asks to install **WSL**, say yes and restart the PC when asked, then open the builder and press the button again.
-6. Wait. **The first build takes an hour or more.** Later builds are quick.
-7. When it says **Installed!**, put the SD card back in the 3DS, open the **Homebrew Launcher** and start **Platinum 3DS**.
+4. **Output folder** (box 3): the finished `.cia` and `.3dsx` are always saved here, in `Platinum\` and `SoulSilver\`,
+   with a `How to put this on your 3DS.txt`. Default: `Documents\Pokemon 3DS Builds`. **Open game folder** opens it.
+5. Put your 3DS SD card in the computer and press **Find it**. (You can skip this; then the files are just saved on the PC.)
+6. Press the big green **Build and install**. If Windows asks to install **WSL**, say yes and restart the PC when asked, then open the builder and press the button again.
+7. Wait. **The first build takes an hour or more.** Later builds are quick.
+8. When it says **Installed!**, put the SD card back in the 3DS, open the **Homebrew Launcher** and start **Platinum 3DS**.
    For a HOME Menu icon, open **FBI** > SD > `cias` > `platinum3ds.cia` > Install.
 
 ### Updating (you already have it installed)
