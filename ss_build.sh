@@ -163,6 +163,7 @@ step_cia() {
 # ------------------------------------------------------------------------------------------------ deploy
 step_deploy() {
   sd="${P3DS_SD:-}"
+  [ -n "$sd" ] || [ "${P3DS_SD_WANTED:-}" != 1 ] || { die "an SD card was picked but its path did not reach the build"; hint "The SD card you picked could not be passed to the builder. Pick it again with Browse and press the button again."; return 1; }
   [ -n "$sd" ] || { say "No SD card folder selected - skipping copy. Your build is at: $OUT3DSX"; return 0; }
   if [ ! -d "$sd" ] || { case "$sd" in /mnt/[a-z]|/mnt/[a-z]/) true ;; *) false ;; esac && [ -z "$(ls -A "$sd" 2>/dev/null)" ]; }; then
     case "$sd" in
@@ -183,6 +184,7 @@ step_deploy() {
   if [ -f "$d/soulsilver.sav" ]; then
     mkdir -p "$d/save_backups"; cp -f "$d/soulsilver.sav" "$d/save_backups/soulsilver_$(date +%Y%m%d_%H%M%S).sav" && ok "save backed up to save_backups/"
   fi
+  [ -f "$d/soulsilver3ds.3dsx" ] && cp -f "$d/soulsilver3ds.3dsx" "$d/soulsilver3ds.3dsx.prev"      # one backup of the previous build
   cp -f "$OUT3DSX" "$d/soulsilver3ds.3dsx" && sync \
     && [ "$(sha1sum < "$OUT3DSX")" = "$(sha1sum < "$d/soulsilver3ds.3dsx")" ] \
     || { die "copy to the SD card failed or came out different"; hint "Copying to the SD card failed. Re-seat the card and try again; if it keeps failing the card may be damaged."; return 1; }
@@ -194,13 +196,38 @@ step_deploy() {
   ok "copied to $d"
   say "Launch it from the Homebrew Launcher on the New 3DS."
   echo "##INSTALLED:$d"
+  step_clean >/dev/null 2>&1 || true      # tidy leftovers after a good copy (see step_clean)
 }
 
 # ------------------------------------------------------------------------------------------------ driver
+# ------------------------------------------------------------------------------------------------ clean
+# Removes only leftovers this builder made. NEVER touches saves, save_backups/, config, ROMs (.nds), the toolchain
+# (/opt/devkitpro), pspoke/ or the build cache. P3DS_CLEAN_DRY=1 only lists (##CLEAN:<path>) what would go.
+step_clean() {
+  local list=() f sd="${P3DS_SD:-}" me
+  for f in /tmp/p3ds_builder.$(id -u).pid; do [ -f "$f" ] && ! kill -0 "$(cat "$f" 2>/dev/null)" 2>/dev/null && list+=("$f"); done
+  for f in "$HOME"/*.partial "$ROOT".partial; do [ -e "$f" ] && list+=("$f"); done        # half-finished downloads
+  if [ -n "$sd" ] && [ -d "$sd" ]; then
+    # old HOME Menu installers of this game (other names than the current one)
+    for f in "$sd"/cias/soulsilver3ds*.cia; do [ -f "$f" ] && [ "$f" != "$sd/cias/soulsilver3ds.cia" ] && list+=("$f"); done
+    # old .3dsx copies: keep the current one and one backup (.prev)
+    for f in "$sd/3ds/soulsilver3ds"/soulsilver3ds*.3dsx "$sd/3ds/soulsilver3ds"/soulsilver3ds*.3dsx.*; do
+      case "$f" in "$sd/3ds/soulsilver3ds/soulsilver3ds.3dsx"|"$sd/3ds/soulsilver3ds/soulsilver3ds.3dsx.prev") continue ;; esac
+      [ -f "$f" ] && list+=("$f")
+    done
+  fi
+  if [ ${#list[@]} = 0 ]; then ok "nothing to clean up"; return 0; fi
+  for f in "${list[@]}"; do
+    case "$f" in *.sav|*.sav.*|*/save_backups/*|*.nds|*.ini|*.cfg|*.json) continue ;; esac   # belt and braces
+    if [ "${P3DS_CLEAN_DRY:-}" = 1 ]; then echo "##CLEAN:$f"; else rm -rf -- "$f" && echo "  removed $f"; fi
+  done
+  return 0
+}
+
 run_step() {
   name="$1"
   case "$name" in
-    check|needs|setup|stage|build|link|cia|deploy) ;;
+    check|needs|setup|stage|build|link|cia|deploy|clean) ;;
     *) echo "unknown step: $name" >&2; return 2 ;;
   esac
   echo "##STEP:$name:START"

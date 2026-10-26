@@ -35,6 +35,13 @@ No game files are in this repo or in the download. Everything happens on your co
 - If the window says **"A newer builder is available"**, click it and download the new `Pokemon3DSBuilder.exe`.
 - Your own edits to a project folder are kept with `git stash` before an update (power users: `git stash list`).
 
+### Cleaning up
+
+After a good copy the builder tidies its own leftovers (half-finished downloads, old copies of its own `.3dsx`/`.cia`).
+On the SD card it keeps the current build plus one backup (`platinum3ds_full.3dsx.prev`). **Advanced > Clean up old builds**
+lists what it would remove and asks first. Saves, `save_backups/`, your game files, settings, the toolchain and the build
+cache are never removed, so rebuilds stay fast.
+
 ### Where the files go on the SD card
 
 | File | Goes in |
@@ -60,6 +67,7 @@ If you skipped the SD card, copy the files into those folders yourself.
 | "ran out of memory" | Close other programs and try again. |
 | "write-protected" | Slide the SD card's lock switch up and plug it in again. |
 | The game is not in the Homebrew Launcher | Check the `.3dsx` is in `SD:/3ds/platinum3ds/`. It needs a **New** 3DS. |
+| The HOME Menu icon is flat, not the animated 3D banner (Platinum) | The 3D banner needs Python 3.12+ in WSL (Ubuntu 24.04). The log says why; press **Copy details for help**. |
 | Anything else | Press **Copy details for help** and paste it into a [GitHub issue](https://github.com/unowncollectables/patch-builder/issues). Never attach game files. |
 
 SoulSilver works the same way: tick **Pokemon SoulSilver** and pick your US SoulSilver `.nds`.

@@ -10,7 +10,7 @@ Package as an .exe with build_exe.bat (PyInstaller). Standard library only.
 """
 import hashlib, json, os, re, string, subprocess, sys, threading, queue, urllib.request, webbrowser
 
-VERSION = "1.0.4"   # bump before tagging a release; compared with the newest GitHub release
+VERSION = "1.0.5"   # bump before tagging a release; compared with the newest GitHub release
 RELEASES_API = "https://api.github.com/repos/unowncollectables/patch-builder/releases/latest"
 RELEASES_PAGE = "https://github.com/unowncollectables/patch-builder/releases/latest"
 
@@ -87,6 +87,15 @@ def wsl_unc_to_linux(p):
     return None
 
 
+def drive_to_mnt(p):
+    """'F:\\', 'F:', 'f:/', 'F:\\a\\b' -> '/mnt/f/', '/mnt/f/', '/mnt/f/', '/mnt/f/a/b' (else None)."""
+    m = re.match(r"^([A-Za-z]):([\\/].*)?$", (p or "").strip().strip('"').strip())
+    if not m:
+        return None
+    rest = (m.group(2) or "/").replace("\\", "/")
+    return "/mnt/" + m.group(1).lower() + re.sub(r"/+", "/", rest)
+
+
 def path_expr(p):
     """Shell expression giving the Linux path for a user-entered path (Windows paths via wslpath)."""
     if not p:
@@ -94,6 +103,9 @@ def path_expr(p):
     if IS_WIN:
         lin = wsl_unc_to_linux(p)
         if lin is not None:
+            return sq(lin)
+        lin = drive_to_mnt(p)
+        if lin is not None:      # X:\... -> /mnt/x/... directly; wslpath fails (prints nothing) for a drive WSL has not mounted
             return sq(lin)
         if len(p) > 1 and p[1] == ":" or p.startswith("\\\\"):
             return '"$(wslpath -a -u %s)"' % sq(p.replace("\\", "/") if len(p) > 1 and p[1] == ":" else p)
@@ -105,6 +117,8 @@ def build_command(cfg, root, steps, legacy=False, game="platinum"):
     exports = ["export P3DS_ROOT=" + path_expr(cfg[GAMES[game]["repo"]])]
     if cfg.get("cia"):
         exports.append("export P3DS_CIA=1")
+    if cfg.get("sd"):
+        exports.append("export P3DS_SD_WANTED=1")
     for key, var in (("platinum", "P3DS_PLATINUM"), ("soulsilver", "P3DS_SOULSILVER"), ("sd", "P3DS_SD")):
         if cfg.get(key):
             exports.append("export %s=%s" % (var, path_expr(cfg[key])))
@@ -142,6 +156,14 @@ def sd_mount_command(sd):
               'mount -t drvfs %s: "$d" && echo "  [ok]      SD card %s: mounted at $d" '
               '|| echo "  (could not mount %s: in WSL)"; else echo "  [ok]      SD card %s: is visible at $d"; fi; true') % (L, L.upper(), L.upper(), L.upper(), L.upper())
     return ["wsl.exe", "-u", "root", "--", "bash", "-c", script]
+
+
+def game_out_dir(repo, game):
+    """Folder holding the built game. A Linux/WSL path is joined with '/', a Windows path with '\\'."""
+    sub = ["platinum3ds" if game == "platinum" else "soulsilver3ds", "full"]
+    if repo.startswith("/"):
+        return "/".join([repo.rstrip("/")] + sub)
+    return "\\".join([repo.rstrip("/\\")] + sub)
 
 
 def newer_release():
@@ -567,7 +589,7 @@ def run_gui():
     abar.pack(fill="x", pady=(6, 0))
     adv_buttons = []
     for text, pipe in (("Check setup", "check"), ("Test my patches (Platinum)", "test"), ("Quick rebuild", "quick"),
-                       ("Reinstall tools", "install"), ("Rebuild everything", "full")):
+                       ("Reinstall tools", "install"), ("Rebuild everything", "full"), ("Clean up old builds", "clean")):
         b = ttk.Button(abar, text=text, command=lambda p=pipe: start(p))
         b.pack(side="left", padx=(0, 6))
         adv_buttons.append(b)
@@ -720,6 +742,9 @@ def run_gui():
             if line.startswith("##HINT:"):
                 st["hint"] = line.strip()[7:]
                 continue
+            if line.startswith("##CLEAN:"):
+                st.setdefault("clean", []).append(line.strip()[8:])
+                continue
             if line.startswith("##NEWS:"):
                 _, g, news = line.strip().split(":", 2)
                 st.setdefault("news", []).append("%s: %s" % (GAMES.get(g, {}).get("name", g), news))
@@ -758,7 +783,25 @@ def run_gui():
             c[GAMES[game]["repo"]] = st["project"][game]
         return ok
 
+    def clean_worker(c):
+        st["clean"] = []
+        cc = dict(c)
+        for g in selected_games(c):
+            if c[GAMES[g]["repo"]]:
+                run_argv(wrap_script("export P3DS_CLEAN_DRY=1; " + build_command(cc, False, ["clean"], False, g)[-1], False),
+                         "list old files (%s)" % GAMES[g]["name"], g)
+        items = list(st["clean"])
+        ans = queue.Queue()
+        q.put(("askclean", items, ans))
+        if ans.get():
+            for g in selected_games(c):
+                if c[GAMES[g]["repo"]]:
+                    run_argv(build_command(cc, False, ["clean"], False, g), "clean up (%s)" % GAMES[g]["name"], g)
+        q.put(("done", True, "clean"))
+
     def worker(pipe, c):
+        if pipe == "clean":
+            return clean_worker(c)
         ok = True
         games = selected_games(c)
         plans = []      # (game, needs_root, steps)
@@ -895,8 +938,8 @@ def run_gui():
             return
         prog.configure(value=100)
         status.set("Done.")
-        if pipe in ("check", "test", "install"):
-            msg = {"check": "Setup checked. Anything marked MISSING is installed by the green button.",
+        if pipe in ("check", "test", "install", "clean"):
+            msg = {"clean": "Clean up finished.", "check": "Setup checked. Anything marked MISSING is installed by the green button.",
                    "test": "All your patches fit. Nothing was changed.",
                    "install": "Build tools installed."}[pipe]
             show_banner(True, msg)
@@ -914,8 +957,7 @@ def run_gui():
         else:
             outs = []
             for g in selected_games(c):
-                outs.append(c[GAMES[g]["repo"]].rstrip("/\\") + ("/" if c[GAMES[g]["repo"]].startswith("/") else os.sep) +
-                            ("platinum3ds" + os.sep + "full" if g == "platinum" else "soulsilver3ds" + os.sep + "full"))
+                outs.append(game_out_dir(c[GAMES[g]["repo"]], g))
             show_banner(True, "Built! No SD card was picked, so the game file(s) are in: " + "; ".join(outs), outs[0] if outs else "")
             try:
                 from tkinter import messagebox
@@ -939,6 +981,14 @@ def run_gui():
                     if a not in ("needs", "get"):
                         st["done_steps"] += 1
                     prog.configure(value=100.0 * st["done_steps"] / max(st["planned"], 1))
+                elif kind == "askclean":
+                    if not a:
+                        messagebox.showinfo("Clean up", "Nothing to clean up. Your saves, save backups, game files and the build cache are always kept.")
+                        b.put(False)
+                    else:
+                        shown_items = "\n".join(a[:25]) + ("\n... and %d more" % (len(a) - 25) if len(a) > 25 else "")
+                        b.put(messagebox.askyesno("Clean up old builds", "These old files will be removed:\n\n" + shown_items +
+                                                  "\n\nSaves, save backups, your game files, settings and the build cache are never removed. Remove them?"))
                 elif kind == "newer":
                     newer_lbl.configure(text="A newer builder is available (%s, you have v%s). Click here to download it." % (a, VERSION))
                     newer_lbl.bind("<Button-1>", lambda e, u=b: webbrowser.open(u))
