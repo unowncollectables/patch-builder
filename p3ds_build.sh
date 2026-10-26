@@ -115,8 +115,8 @@ step_check() {
   command -v make >/dev/null && ok make || miss "make"
   command -v patch >/dev/null && ok patch || miss "patch"
   command -v python3 >/dev/null && ok "python3 $(python3 -V 2>&1 | cut -d' ' -f2)" || miss "python3"
-  python3 -c 'import ndspy' 2>/dev/null && ok "python ndspy" || miss "python ndspy  (pip install ndspy)"
-  python3 -c 'import PIL' 2>/dev/null && ok "python pillow" || miss "python pillow (pip install pillow)"
+  python3 -I -c 'import ndspy' 2>/dev/null && ok "python ndspy" || miss "python ndspy  (pip install ndspy)"
+  python3 -I -c 'import PIL, numpy' 2>/dev/null && ok "python pillow" || miss "python pillow (pip install pillow)"
   [ -x "$DKP/devkitARM/bin/arm-none-eabi-gcc" ] && ok "devkitARM ($("$DKP"/devkitARM/bin/arm-none-eabi-gcc -dumpversion 2>/dev/null))" || miss "devkitARM"
   [ -f "$DKP/libctru/include/3ds.h" ] && ok libctru || miss libctru
   [ -f "$DKP/libctru/include/citro3d.h" ] && ok citro3d || miss citro3d
@@ -141,7 +141,7 @@ step_check() {
 step_needs() {
   local tools=ok
   for c in git make patch python3 sha1sum; do command -v $c >/dev/null || tools=missing; done
-  python3 -c 'import ndspy, PIL' 2>/dev/null || tools=missing
+  python3 -I -c 'import ndspy, PIL, numpy' 2>/dev/null || tools=missing   # -I: the same isolated python the build uses, so a --user install does not count
   for f in "$DKP/devkitARM/bin/arm-none-eabi-gcc" "$DKP/libctru/include/3ds.h" "$DKP/libctru/include/citro3d.h" "$DKP/tools/bin/3dsxtool" "$DKP/tools/bin/picasso"; do
     [ -e "$f" ] || tools=missing
   done
@@ -178,9 +178,9 @@ step_setup() {
     as_root dkp-pacman -Sy --noconfirm 3ds-dev \
       || { die "dkp-pacman -S 3ds-dev failed (output above)"; hint "Could not download the 3DS compiler (devkitPro). Its servers may be busy; wait a few minutes and press the button again."; return 1; }
   else ok "devkitARM already installed"; fi
-  say "Installing Python modules (ndspy, pillow)..."
-  as_root python3 -m pip install -q --break-system-packages ndspy pillow 2>/dev/null || as_root python3 -m pip install -q ndspy pillow \
-    || { die "pip install ndspy pillow failed (output above)"; hint "Could not install two small Python modules (ndspy, pillow). Check that this computer is online, then press the button again."; return 1; }
+  say "Installing Python modules (ndspy, pillow, numpy)..."
+  as_root python3 -m pip install -q --break-system-packages ndspy pillow numpy 2>/dev/null || as_root python3 -m pip install -q ndspy pillow numpy \
+    || { die "pip install ndspy pillow failed (output above)"; hint "Could not install two small Python modules (ndspy, pillow, numpy). Check that this computer is online, then press the button again."; return 1; }
   ensure_link || return 1
   say "Setup done."
 }
@@ -318,9 +318,19 @@ step_relink() {
 # ------------------------------------------------------------------------------------------------ followers
 step_followers() {
   [ -f "$SS_ROM" ] || { say "No SoulSilver ROM staged - skipping followers.bin (optional)."; return 0; }
-  python3 -I "$ROOT/followers/extract.py" "$SS_ROM" "$ROOT/platinum3ds/full/followers.bin" || { die "followers extraction failed"
-    hint "Making the following-Pokemon sprites from your SoulSilver file failed. Clear the SoulSilver box (it is optional) to build without them."; return 1; }
-  ok "followers.bin created"
+  if ! python3 -I -c 'import ndspy, PIL' 2>/dev/null; then
+    say "  Installing the Python modules the following-Pokemon step needs..."
+    as_root python3 -m pip install -q --break-system-packages ndspy pillow numpy 2>/dev/null || as_root python3 -m pip install -q ndspy pillow numpy 2>/dev/null || true
+  fi
+  # Optional extra: a failure here must never stop Platinum from being installed.
+  if python3 -I "$ROOT/followers/extract.py" "$SS_ROM" "$ROOT/platinum3ds/full/followers.bin"; then
+    ok "followers.bin created"
+  else
+    say "  [!]       following Pokemon could not be made (error above). Platinum is still installed, just without them."
+    rm -f "$ROOT/platinum3ds/full/followers.bin.partial"
+    hint "Platinum was built without following Pokemon (that optional step failed). Press 'Reinstall tools' in Advanced, then build again to add them."
+  fi
+  return 0
 }
 
 # ------------------------------------------------------------------------------------------------ cia

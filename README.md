@@ -39,6 +39,8 @@ If you skipped the SD card, copy the files into those folders yourself.
 
 | You see | Do this |
 |---|---|
+| "Windows protected your PC" (blue SmartScreen box) | Normal for a new download. Press **More info**, then **Run anyway**. |
+| "No module named 'ndspy'" or "built without following Pokemon" | Advanced > **Reinstall tools**, then press **Build and install** again. Platinum still installs without following Pokemon either way. |
 | "The Platinum project is not public yet" | Not your fault. Wait for the public release, then press the button again. |
 | Red cross: "another region" / "Rev 0" / "trimmed" / "has been changed" | You need an untouched US Rev 1 dump, 128 MB. Dump your cartridge again (for example with GodMode9). |
 | "WSL has no Linux installed" | Open PowerShell and run `wsl --install -d Ubuntu`, restart, try again. |
