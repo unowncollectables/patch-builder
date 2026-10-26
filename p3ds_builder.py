@@ -51,6 +51,8 @@ SS_PIPELINES = {   # the same Advanced buttons for SoulSilver
 
 # Known failure text -> what to tell the user. First match wins; the script's own ##HINT lines win over these.
 HINTS = [
+    (r"Platinum project is not public|could not read Username|Repository not found|Authentication failed",
+     "The Platinum project is not public yet, so the builder cannot download it. Nothing is wrong with your computer or game file. Wait for the public release, then press the button again."),
     (r"No space left on device", "The disk is full. Free up about 10 GB and press the button again."),
     (r"Could not resolve host|Temporary failure in name resolution|unable to access 'https|Failed to fetch",
      "Could not download something. Check that this computer is online, then press the button again."),
@@ -314,7 +316,7 @@ def load_settings():
         d = {}
     out = {k: d.get(k, "") for k in FIELDS}
     out["legacy"] = bool(d.get("legacy"))
-    out["cia"] = bool(d.get("cia"))
+    out["cia"] = bool(d.get("cia", True))   # beginners want both the .3dsx and the HOME Menu .cia
     out["want_plat"] = bool(d.get("want_plat", True))
     out["want_ss"] = bool(d.get("want_ss", False))
     return out

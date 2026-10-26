@@ -1,50 +1,61 @@
 # Pokemon 3DS Builder
 
-One window that builds the **Platinum 3DS** port, the **SoulSilver 3DS** port, or both, and puts them on your 3DS SD card.
-You bring your own game files; nothing is uploaded and no game data is in this repo.
+Turns **your own** Pokemon Platinum (or SoulSilver) cartridge dump into a game that runs natively on a **New Nintendo 3DS**.
+No game files are in this repo or in the download. Everything happens on your computer, with your file.
 
-| Port | Project it builds |
+> **Platinum status:** the Platinum project ([3ds-platinum](https://github.com/unowncollectables/3ds-platinum)) is **not public yet**.
+> Until it is, the Platinum build stops at "Downloading the project" with a message saying so. SoulSilver works today.
+
+## What you need
+
+- A Windows 10 or 11 PC (about 15 GB free space, internet).
+- A **New** 3DS / New 2DS XL with custom firmware (Luma3DS + Homebrew Launcher; FBI if you want a HOME Menu icon).
+- Your own clean dump of **Pokemon Platinum US, Rev 1** (`.nds`, 128 MB). Please do not ask anyone for ROMs.
+
+## Steps
+
+1. Download **Pokemon3DSBuilder.exe** from the [Releases page](https://github.com/unowncollectables/patch-builder/releases) and double-click it.
+   (Windows may say "Windows protected your PC": press **More info**, then **Run anyway**.)
+2. Tick **Pokemon Platinum**.
+3. Press **Browse** and pick your `.nds` file. A **green tick** means it is the right one. A red cross tells you what is wrong.
+4. Put your 3DS SD card in the computer and press **Find it**. (You can skip this; then the files are just saved on the PC.)
+5. Press the big green **Build and install**. If Windows asks to install **WSL**, say yes and restart the PC when asked, then open the builder and press the button again.
+6. Wait. **The first build takes an hour or more.** Later builds are quick.
+7. When it says **Installed!**, put the SD card back in the 3DS, open the **Homebrew Launcher** and start **Platinum 3DS**.
+   For a HOME Menu icon, open **FBI** > SD > `cias` > `platinum3ds.cia` > Install.
+
+### Where the files go on the SD card
+
+| File | Goes in |
 |---|---|
-| Pokemon Platinum (US, Rev 1) | [3ds-platinum](https://github.com/unowncollectables/3ds-platinum) |
-| Pokemon SoulSilver (US) | [Pokemon-Soulsilver-New3ds](https://github.com/unowncollectables/Pokemon-Soulsilver-New3ds) |
+| `platinum3ds_full.3dsx` (Homebrew Launcher) | `SD:/3ds/platinum3ds/` |
+| your game file (copied once, as `platinum.nds`) | `SD:/3ds/platinum3ds/` |
+| `platinum3ds.cia` (HOME Menu installer) | `SD:/cias/` |
+| your save `platinum.sav` | `SD:/3ds/platinum3ds/` (never overwritten; backed up to `save_backups/` first) |
 
-You need a **New Nintendo 3DS / New 2DS XL with custom firmware** (Luma3DS), and **your own legal dump** of each game you want
-(`.nds`, from your own cartridge). Please do not ask anyone for ROMs.
+If you skipped the SD card, copy the files into those folders yourself.
 
-## Install in 5 steps (Windows)
+## Troubleshooting
 
-1. **Get the builder.** Download this repo (green **Code** button, **Download ZIP**) and unzip it. Install
-   [Python 3](https://www.python.org/downloads/) (tick *Add python to PATH*), then double-click `build_exe.bat` to make
-   `Pokemon3DSBuilder.exe`. (Or skip the exe: `python p3ds_builder.py`.)
-2. **Open it** and tick **Pokemon Platinum**, **Pokemon SoulSilver**, or both.
-3. **Pick your game file(s)**: press **Browse** next to each ticked game and choose your `.nds`. A green tick means it is the
-   right file. A red cross says exactly what is wrong (wrong region, wrong game, Rev 0, trimmed...).
-4. **Pick your SD card** (press **Find it**), plugged into the computer. Optional: without it the games are built but not copied.
-5. Press the big green **Build and install**.
+| You see | Do this |
+|---|---|
+| "The Platinum project is not public yet" | Not your fault. Wait for the public release, then press the button again. |
+| Red cross: "another region" / "Rev 0" / "trimmed" / "has been changed" | You need an untouched US Rev 1 dump, 128 MB. Dump your cartridge again (for example with GodMode9). |
+| "WSL has no Linux installed" | Open PowerShell and run `wsl --install -d Ubuntu`, restart, try again. |
+| "Check that this computer is online" | Connect to the internet and press the button again. |
+| "The disk is full" | Free about 15 GB and try again. |
+| "ran out of memory" | Close other programs and try again. |
+| "write-protected" | Slide the SD card's lock switch up and plug it in again. |
+| The game is not in the Homebrew Launcher | Check the `.3dsx` is in `SD:/3ds/platinum3ds/`. It needs a **New** 3DS. |
+| Anything else | Press **Copy details for help** and paste it into a [GitHub issue](https://github.com/unowncollectables/patch-builder/issues). Never attach game files. |
 
-The first time it installs everything it needs (it asks Windows to install WSL, a Linux that runs inside Windows; restart
-once if it asks), downloads the two projects, and compiles. **The first build takes a long time (an hour or more per game).**
-Later builds only redo what changed. If something goes wrong a red box says what to do in plain words, and
-**Copy details for help** copies the full log so you can paste it to an AI helper or into a GitHub issue.
+SoulSilver works the same way: tick **Pokemon SoulSilver** and pick your US SoulSilver `.nds`.
+Giving a SoulSilver file while building Platinum also adds following Pokemon to Platinum.
 
-Tick **Also make the installer for the HOME Menu (.cia)** if you want a HOME Menu icon instead of launching from the
-Homebrew Launcher.
+## Make the exe yourself (optional)
 
-### What ends up on the SD card
-
-| Game | `.3dsx` (Homebrew Launcher) | your game file | save | HOME Menu installer (optional) |
-|---|---|---|---|---|
-| Platinum | `3ds/platinum3ds/platinum3ds_full.3dsx` | `3ds/platinum3ds/platinum.nds` | `platinum.sav`, backed up to `save_backups/` before every install | `cias/platinum3ds.cia` |
-| SoulSilver | `3ds/soulsilver3ds/soulsilver3ds.3dsx` | `3ds/soulsilver3ds/soulsilver.nds` | `soulsilver.sav`, backed up to `save_backups/` before every install | `cias/soulsilver3ds.cia` |
-
-Install a `.cia` with FBI. The `.nds` is copied only if the card does not have one already, and **a save on the card is never overwritten**.
-Saves are plain `.sav` files, so they can be moved between the port and a real cartridge or flashcart (keep your own backup too).
-Launch from the Homebrew Launcher (or HOME Menu) on the New 3DS.
-
-### Platinum with following Pokemon
-
-If you build Platinum and also give a SoulSilver file, Platinum gets HGSS-style following Pokemon (`followers.bin`).
-Building SoulSilver on its own does not need Platinum, and the other way round.
+Install [Python 3](https://www.python.org/downloads/) (tick *Add python to PATH*) and double-click `build_exe.bat`.
+Or run without an exe: `python p3ds_builder.py`. Maintainers: pushing a `v*` tag builds the exe and attaches it to a release (`.github/workflows/release-exe.yml`).
 
 ## Linux and the command line
 
