@@ -340,16 +340,26 @@ step_cia() {
   [ -f "$LINK/platinum3ds/full/platinum3ds_full.elf" ] || { die "nothing linked yet - run the 'relink' step first"; return 1; }
   build_env
   bash "$HERE/build_cia_tools.sh" "$ROOT/build/cia-tools" || { die "could not build makerom/bannertool"; hint "The tools for the HOME Menu (.cia) version could not be built. The .3dsx still works."; return 1; }
-  ( cd "$LINK/platinum3ds/full" && make cia BT="$ROOT/build/cia-tools/bin/bannertool" MAKEROM="$ROOT/build/cia-tools/bin/makerom" ) \
+  python3 -c 'import sys; sys.exit(sys.version_info < (3, 12))' 2>/dev/null \
+    || say "  [!]       Python $(python3 -c 'import sys;print("%d.%d"%sys.version_info[:2])') is older than 3.12: the animated 3D HOME Menu banner needs 3.12+ (Ubuntu 24.04)."
+  ( cd "$LINK/platinum3ds/full" && make cia BANNER=3d BT="$ROOT/build/cia-tools/bin/bannertool" MAKEROM="$ROOT/build/cia-tools/bin/makerom" ) 2>&1 | tee "$ROOT/build/cia-make.log"
+  [ "${PIPESTATUS[0]}" = 0 ] \
     || { die "making the .cia failed (error above)"; hint "The HOME Menu (.cia) version failed. The .3dsx still works. Press 'Copy details for help'."; return 1; }
   [ -f "$ROOT/platinum3ds/full/platinum3ds_full.cia" ] || { die "no .cia produced"; return 1; }
   CIA_BUILT=1
+  if grep -q "No 3D banner" "$ROOT/build/cia-make.log" 2>/dev/null; then
+    say "  [!]       The animated 3D HOME Menu banner could not be made (reason above), so this .cia has the flat banner."
+    hint "Built and installed, but the .cia has the flat HOME Menu banner: the animated 3D one failed (often Python older than 3.12 in WSL; Ubuntu 24.04 has 3.12). Press 'Copy details for help'."
+  else
+    ok "animated 3D HOME Menu banner included"
+  fi
   ok "built $(stat -c %s "$ROOT/platinum3ds/full/platinum3ds_full.cia") bytes platinum3ds_full.cia"
 }
 
 # ------------------------------------------------------------------------------------------------ deploy
 step_deploy() {
   sd="${P3DS_SD:-}"
+  [ -n "$sd" ] || [ "${P3DS_SD_WANTED:-}" != 1 ] || { die "an SD card was picked but its path did not reach the build"; hint "The SD card you picked could not be passed to the builder. Pick it again with Browse and press the button again."; return 1; }
   [ -n "$sd" ] || { say "No SD card folder selected - skipping copy. Your build is at: $OUT3DSX"; return 0; }
   if [ ! -d "$sd" ] || { case "$sd" in /mnt/[a-z]|/mnt/[a-z]/) true ;; *) false ;; esac && [ -z "$(ls -A "$sd" 2>/dev/null)" ]; }; then
     case "$sd" in
@@ -370,6 +380,7 @@ step_deploy() {
   if [ -f "$d/platinum.sav" ]; then
     mkdir -p "$d/save_backups"; cp -f "$d/platinum.sav" "$d/save_backups/platinum_$(date +%Y%m%d_%H%M%S).sav" && ok "save backed up to save_backups/"
   fi
+  [ -f "$d/platinum3ds_full.3dsx" ] && cp -f "$d/platinum3ds_full.3dsx" "$d/platinum3ds_full.3dsx.prev"      # one backup of the previous build
   cp -f "$OUT3DSX" "$d/platinum3ds_full.3dsx" && sync \
     && [ "$(sha1sum < "$OUT3DSX")" = "$(sha1sum < "$d/platinum3ds_full.3dsx")" ] \
     || { die "copy to the SD card failed or came out different"; hint "Copying to the SD card failed. Re-seat the card and try again; if it keeps failing the card may be damaged."; return 1; }
@@ -381,13 +392,38 @@ step_deploy() {
   ok "copied to $d"
   say "Launch it from the Homebrew Launcher on the New 3DS."
   echo "##INSTALLED:$d"
+  step_clean >/dev/null 2>&1 || true      # tidy leftovers after a good copy (see step_clean)
 }
 
 # ------------------------------------------------------------------------------------------------ driver
+# ------------------------------------------------------------------------------------------------ clean
+# Removes only leftovers this builder made. NEVER touches saves, save_backups/, config, ROMs (.nds), the toolchain
+# (/opt/devkitpro), pspoke/ or the build cache. P3DS_CLEAN_DRY=1 only lists (##CLEAN:<path>) what would go.
+step_clean() {
+  local list=() f sd="${P3DS_SD:-}" me
+  for f in /tmp/p3ds_builder.$(id -u).pid; do [ -f "$f" ] && ! kill -0 "$(cat "$f" 2>/dev/null)" 2>/dev/null && list+=("$f"); done
+  for f in "$HOME"/*.partial "$ROOT".partial; do [ -e "$f" ] && list+=("$f"); done        # half-finished downloads
+  if [ -n "$sd" ] && [ -d "$sd" ]; then
+    # old HOME Menu installers of this game (other names than the current one)
+    for f in "$sd"/cias/platinum3ds*.cia; do [ -f "$f" ] && [ "$f" != "$sd/cias/platinum3ds.cia" ] && list+=("$f"); done
+    # old .3dsx copies: keep the current one and one backup (.prev)
+    for f in "$sd/3ds/platinum3ds"/platinum3ds*.3dsx "$sd/3ds/platinum3ds"/platinum3ds*.3dsx.*; do
+      case "$f" in "$sd/3ds/platinum3ds/platinum3ds_full.3dsx"|"$sd/3ds/platinum3ds/platinum3ds_full.3dsx.prev") continue ;; esac
+      [ -f "$f" ] && list+=("$f")
+    done
+  fi
+  if [ ${#list[@]} = 0 ]; then ok "nothing to clean up"; return 0; fi
+  for f in "${list[@]}"; do
+    case "$f" in *.sav|*.sav.*|*/save_backups/*|*.nds|*.ini|*.cfg|*.json) continue ;; esac   # belt and braces
+    if [ "${P3DS_CLEAN_DRY:-}" = 1 ]; then echo "##CLEAN:$f"; else rm -rf -- "$f" && echo "  removed $f"; fi
+  done
+  return 0
+}
+
 run_step() {
   name="$1"
   case "$name" in
-    check|needs|setup|link|stage|pspoke|full|patches|testpatches|relink|followers|cia|deploy) ;;
+    check|needs|setup|link|stage|pspoke|full|patches|testpatches|relink|followers|cia|deploy|clean) ;;
     *) echo "unknown step: $name" >&2; return 2 ;;
   esac
   echo "##STEP:$name:START"
