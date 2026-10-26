@@ -164,7 +164,16 @@ step_cia() {
 step_deploy() {
   sd="${P3DS_SD:-}"
   [ -n "$sd" ] || { say "No SD card folder selected - skipping copy. Your build is at: $OUT3DSX"; return 0; }
-  [ -d "$sd" ] || { die "SD card folder not found: $sd"; hint "The SD card is not plugged in (or its drive letter changed). Plug it in, pick it in the SD card box, press the button again."; return 1; }
+  if [ ! -d "$sd" ] || { case "$sd" in /mnt/[a-z]|/mnt/[a-z]/) true ;; *) false ;; esac && [ -z "$(ls -A "$sd" 2>/dev/null)" ]; }; then
+    case "$sd" in
+      /mnt/[a-z]|/mnt/[a-z]/) L=$(printf %s "$sd" | cut -c6 | tr a-z A-Z)
+        die "WSL cannot see drive $L: at $sd (Windows may still see it)"
+        hint "Your game is built, but the Linux part of the builder cannot see SD card $L: yet. Open PowerShell and run:  wsl -u root mount -t drvfs $L: /mnt/$(printf %s "$L" | tr A-Z a-z)   then press the button again. (Or restart the PC with the card plugged in.)" ;;
+      *) die "SD card folder not found: $sd"
+        hint "The SD card folder was not found. Plug the card in, pick it in the SD card box again, press the button again." ;;
+    esac
+    return 1
+  fi
   [ -f "$OUT3DSX" ] || { die "nothing built yet"; return 1; }
   [ -d "$sd/Nintendo 3DS" ] || [ -d "$sd/3ds" ] || say "  [!]       This does not look like a 3DS SD card (no 'Nintendo 3DS' or '3ds' folder). Copying anyway."
   need=$(( $(stat -c %s "$OUT3DSX") + 140000000 )); have=$(df -Pk "$sd" 2>/dev/null | awk 'NR==2 {print $4*1024}')
