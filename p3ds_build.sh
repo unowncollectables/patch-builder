@@ -366,6 +366,7 @@ step_export() {
   mkdir -p "$o" 2>/dev/null && [ -w "$o" ] || { die "cannot write to the output folder $o"; hint "Could not save the finished game in your output folder. Pick another folder in 'Output folder' and press the button again."; return 1; }
   cp -f "$OUT3DSX" "$o/platinum3ds_full.3dsx" || { die "copy to the output folder failed"; hint "Could not save the finished game in your output folder. Check there is free space, then try again."; return 1; }
   [ -f "$ROOT/platinum3ds/full/platinum3ds_full.cia" ] && [ "${P3DS_CIA:-0}" = 1 ] && cp -f "$ROOT/platinum3ds/full/platinum3ds_full.cia" "$o/platinum3ds.cia"
+  if [ -f "$ROOT/platinum3ds/full/followers.bin" ]; then cp -f "$ROOT/platinum3ds/full/followers.bin" "$o/followers.bin"; else rm -f "$o/followers.bin"; fi
   cat > "$o/How to put this on your 3DS.txt" <<'TXT'
 How to put this on your 3DS
 ===========================

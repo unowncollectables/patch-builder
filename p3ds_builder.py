@@ -10,7 +10,7 @@ Package as an .exe with build_exe.bat (PyInstaller). Standard library only.
 """
 import hashlib, json, os, re, string, subprocess, sys, threading, queue, urllib.request, webbrowser
 
-VERSION = "1.0.7"   # bump before tagging a release; compared with the newest GitHub release
+VERSION = "1.0.8"   # bump before tagging a release; compared with the newest GitHub release
 RELEASES_API = "https://api.github.com/repos/unowncollectables/patch-builder/releases/latest"
 RELEASES_PAGE = "https://github.com/unowncollectables/patch-builder/releases/latest"
 
@@ -120,9 +120,11 @@ def build_command(cfg, root, steps, legacy=False, game="platinum"):
     exports = ["export P3DS_ROOT=" + path_expr(cfg[GAMES[game]["repo"]])]
     if cfg.get("cia"):
         exports.append("export P3DS_CIA=1")
-    if cfg.get("sd"):
+    if cfg.get("sd") and not IS_WIN:      # on Windows the exe itself copies to the card (sd_copy), WSL never sees it
         exports.append("export P3DS_SD_WANTED=1")
     for key, var in (("platinum", "P3DS_PLATINUM"), ("soulsilver", "P3DS_SOULSILVER"), ("sd", "P3DS_SD"), ("out", "P3DS_OUT")):
+        if key == "sd" and IS_WIN:
+            continue
         if cfg.get(key):
             exports.append("export %s=%s" % (var, path_expr(cfg[key])))
     if legacy:
@@ -167,6 +169,65 @@ def game_out_dir(repo, game):
     if repo.startswith("/"):
         return "/".join([repo.rstrip("/")] + sub)
     return "\\".join([repo.rstrip("/\\")] + sub)
+
+
+SD_LAYOUT = {   # game -> (sd folder, .3dsx name, .cia name on the card, nds name, save name)
+    "platinum":   ("platinum3ds", "platinum3ds_full.3dsx", "platinum3ds.cia", "platinum.nds", "platinum.sav"),
+    "soulsilver": ("soulsilver3ds", "soulsilver3ds.3dsx", "soulsilver3ds.cia", "soulsilver.nds", "soulsilver.sav"),
+}
+
+
+def _sha1(path):
+    h = hashlib.sha1()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def sd_copy(game, out_dir, sd, rom, log=print):
+    """Copy a finished game from the Windows output folder to the SD card, from Windows (no WSL involved).
+    Backs up the save first, keeps one .prev of the old .3dsx, copies the user's .nds only if the card has none.
+    Never deletes or overwrites a save. Returns (ok, message, sd game folder)."""
+    import shutil, time
+    folder, dotx, cia, nds, sav = SD_LAYOUT[game]
+    name = GAMES[game]["name"]
+    src = os.path.join(out_dir, name)
+    if not os.path.isfile(os.path.join(src, dotx)):
+        return False, "The finished %s game was not found in your output folder (%s). Press the button again." % (name, src), ""
+    if not os.path.isdir(sd):
+        return False, "The SD card (%s) is not there any more. Plug it in and press the button again." % sd, ""
+    d = os.path.join(sd, "3ds", folder)
+    try:
+        os.makedirs(d, exist_ok=True)
+        if os.path.isfile(os.path.join(d, sav)):
+            os.makedirs(os.path.join(d, "save_backups"), exist_ok=True)
+            bk = os.path.join(d, "save_backups", "%s_%s.sav" % (sav[:-4], time.strftime("%Y%m%d_%H%M%S")))
+            shutil.copy2(os.path.join(d, sav), bk)
+            log("  [ok]      save backed up to %s\n" % bk)
+        if os.path.isfile(os.path.join(d, dotx)):
+            shutil.copy2(os.path.join(d, dotx), os.path.join(d, dotx + ".prev"))
+        shutil.copyfile(os.path.join(src, dotx), os.path.join(d, dotx))
+        if _sha1(os.path.join(src, dotx)) != _sha1(os.path.join(d, dotx)):
+            return False, "Copying to the SD card came out different. Re-seat the card and try again; it may be failing.", d
+        log("  [ok]      %s copied to %s\n" % (dotx, d))
+        if rom and os.path.isfile(rom) and not os.path.isfile(os.path.join(d, nds)):
+            shutil.copyfile(rom, os.path.join(d, nds))
+            log("  [ok]      your game file copied as %s\n" % nds)
+        fb = os.path.join(src, "followers.bin")
+        if game == "platinum" and os.path.isfile(fb):
+            shutil.copyfile(fb, os.path.join(d, "followers.bin"))
+        if os.path.isfile(os.path.join(src, cia)):
+            os.makedirs(os.path.join(sd, "cias"), exist_ok=True)
+            shutil.copyfile(os.path.join(src, cia), os.path.join(sd, "cias", cia))
+            log("  [ok]      HOME Menu installer copied to %s (install it with FBI)\n" % os.path.join(sd, "cias", cia))
+    except PermissionError:
+        return False, "The SD card is write-protected or in use. Slide its lock switch up, plug it back in, and try again.", d
+    except OSError as e:
+        if getattr(e, "errno", 0) == 28:
+            return False, "The SD card is full. Free up about 200 MB on it and press the button again.", d
+        return False, "Copying to the SD card failed (%s). Re-seat the card and try again." % (e.strerror or e), d
+    return True, "", d
 
 
 def newer_release():
@@ -546,7 +607,7 @@ def run_gui():
                    activebackground="#2c974b", activeforeground="white", relief="flat", padx=20, pady=10,
                    cursor="hand2", command=lambda: start("auto"))
     go.pack(fill="x", pady=(4, 4))
-    upd = tk.Button(outer, text="Update  (get the newest version of the game(s), rebuild, copy to the SD card)",
+    upd = tk.Button(outer, text="Update: download the newest game code from GitHub, rebuild, then copy",
                     font=(big[0], 12, "bold"), bg="#0969da", fg="white", activebackground="#0860ca", activeforeground="white",
                     relief="flat", padx=16, pady=6, cursor="hand2", command=lambda: start("update"))
     upd.pack(fill="x", pady=(0, 8))
@@ -649,7 +710,7 @@ def run_gui():
 
     def show_banner(ok, text, folder=""):
         if st.get("news"):
-            text = "What's new - " + "; ".join(st["news"]) + "\n" + text
+            text = "Game code on GitHub - " + "; ".join(st["news"]) + "\n" + text
         banner.configure(text=text, bg="#dafbe1" if ok else "#ffebe9", fg=GOOD if ok else BAD)
         banner.pack(fill="x", pady=(8, 0), before=folds)
         brow.pack(fill="x", pady=(4, 0), before=folds)
@@ -789,7 +850,7 @@ def run_gui():
         return rc == 0 and not st["cancel"], needs, rc
 
     def run_steps(c, game, needs_root, steps):
-        if IS_WIN and "deploy" in steps and sd_mount_command(c.get("sd", "")):
+        if False:   # v1.0.8: the SD copy is done from Windows (sd_copy), no WSL mount needed
             # A card plugged in after WSL started is often not visible under /mnt/<letter>; mount it (as admin) first.
             run_argv(sd_mount_command(c["sd"]), "make the SD card visible to the builder (as admin)", game)
         ok, needs, _ = run_argv(build_command(c, needs_root, steps, legacy.get(), game),
@@ -866,6 +927,17 @@ def run_gui():
                 ok = False
                 break
             ok, _ = run_steps(c, g, rt, steps)
+        if ok and IS_WIN and c.get("sd") and pipe in ("auto", "full", "quick") and not st["cancel"]:
+            for g in selected_games(c):
+                q.put(("log", "\n$ copy %s to the SD card (from Windows)\n" % GAMES[g]["name"], None))
+                q.put(("step", "deploy", None))
+                good, msg, d = sd_copy(g, c.get("out") or DEFAULT_OUT, c["sd"], c.get(g), lambda t: q.put(("log", t, None)))
+                if not good:
+                    st["hint"], st["failed"] = msg, "deploy"
+                    q.put(("log", "ERROR: " + msg + "\n", "bad"))
+                    ok = False
+                    break
+                st["installed"].append((g, d))
         q.put(("done", ok, pipe))
 
     def start(pipe):
