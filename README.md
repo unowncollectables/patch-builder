@@ -55,7 +55,7 @@ Giving a SoulSilver file while building Platinum also adds following Pokemon to 
 ## Make the exe yourself (optional)
 
 Install [Python 3](https://www.python.org/downloads/) (tick *Add python to PATH*) and double-click `build_exe.bat`.
-Or run without an exe: `python p3ds_builder.py`. Maintainers: pushing a `v*` tag builds the exe and attaches it to a release (`.github/workflows/release-exe.yml`).
+Or run without an exe: `python p3ds_builder.py`. Maintainers: pushing a `v*` tag builds the exe and attaches it to a release (copy `ci/release-exe.yml` into `.github/workflows/` once; a token without workflow scope could not add it there).
 
 ## Linux and the command line
 
