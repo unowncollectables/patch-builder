@@ -50,6 +50,11 @@ SS_PIPELINES = {   # the same Advanced buttons for SoulSilver
 }
 
 # Known failure text -> what to tell the user. First match wins; the script's own ##HINT lines win over these.
+SD_STEPS = ("1. Put the SD card in your New 3DS and turn it on.\n"
+            "2. Homebrew Launcher: start Platinum 3DS (file SD:/3ds/platinum3ds/platinum3ds_full.3dsx).\n"
+            "3. Or for a HOME Menu icon: open FBI > SD > cias > platinum3ds.cia > Install.\n"
+            "If you copy by hand: the .3dsx and your .nds (renamed platinum.nds) go in SD:/3ds/platinum3ds/, the .cia goes in SD:/cias/.")
+
 HINTS = [
     (r"Platinum project is not public|could not read Username|Repository not found|Authentication failed",
      "The Platinum project is not public yet, so the builder cannot download it. Nothing is wrong with your computer or game file. Wait for the public release, then press the button again."),
@@ -827,6 +832,11 @@ def run_gui():
         elif st["installed"]:
             names = " and ".join("%s 3DS" % GAMES[g]["name"] for g, _ in st["installed"] if g)
             more = " To use the HOME Menu version instead, install the .cia from the cias folder on the card with FBI." if st["cia"] else ""
+            try:
+                from tkinter import messagebox
+                messagebox.showinfo("All done!", "Your game is on the SD card.\n\n" + SD_STEPS)
+            except Exception:
+                pass
             show_banner(True, "Installed! Put the SD card back in your New 3DS, open the Homebrew Launcher and start %s.%s" % (names, more), "")
         else:
             outs = []
@@ -834,6 +844,11 @@ def run_gui():
                 outs.append(c[GAMES[g]["repo"]].rstrip("/\\") + ("/" if c[GAMES[g]["repo"]].startswith("/") else os.sep) +
                             ("platinum3ds" + os.sep + "full" if g == "platinum" else "soulsilver3ds" + os.sep + "full"))
             show_banner(True, "Built! No SD card was picked, so the game file(s) are in: " + "; ".join(outs), outs[0] if outs else "")
+            try:
+                from tkinter import messagebox
+                messagebox.showinfo("Copy these files to your SD card", SD_STEPS + "\n\nYour built files are in:\n" + "\n".join(outs))
+            except Exception:
+                pass
 
     def pump():
         try:
