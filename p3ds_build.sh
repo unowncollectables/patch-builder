@@ -376,6 +376,7 @@ How to put this on your 3DS
 3. HOME Menu version (optional): copy platinum3ds.cia to  SD:\cias\  then on the 3DS open FBI > SD > cias > platinum3ds.cia > Install.
 Your save (platinum.sav in SD:\3ds\platinum3ds\) is never touched by copying these files.
 TXT
+  printf '\nBuilt version: %s\n' "$(git -C "$ROOT" log -1 --format='commit %h (%cs): %s' 2>/dev/null)" >> "$o/How to put this on your 3DS.txt"
   sed -i 's/$/\r/' "$o/How to put this on your 3DS.txt" 2>/dev/null   # Windows line endings for Notepad
   ok "saved to your output folder (Platinum)"
   echo "##OUTPUT:Platinum"
@@ -386,7 +387,7 @@ step_deploy() {
   step_export || return 1
   sd="${P3DS_SD:-}"
   [ -n "$sd" ] || [ "${P3DS_SD_WANTED:-}" != 1 ] || { die "an SD card was picked but its path did not reach the build"; hint "The SD card you picked could not be passed to the builder. Pick it again with Browse and press the button again."; return 1; }
-  [ -n "$sd" ] || { say "No SD card folder selected - skipping copy. Your build is at: $OUT3DSX"; return 0; }
+  [ -n "$sd" ] || { [ -n "${P3DS_OUT:-}" ] || say "No SD card picked, so nothing was copied to a card."; return 0; }
   if [ ! -d "$sd" ] || { case "$sd" in /mnt/[a-z]|/mnt/[a-z]/) true ;; *) false ;; esac && [ -z "$(ls -A "$sd" 2>/dev/null)" ]; }; then
     case "$sd" in
       /mnt/[a-z]|/mnt/[a-z]/) L=$(printf %s "$sd" | cut -c6 | tr a-z A-Z)

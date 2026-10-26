@@ -49,6 +49,10 @@ No game files are in this repo or in the download. Everything happens on your co
 - Press the blue **Update** button. It does **not** update the builder itself: it downloads the newest **game code** (the Platinum/SoulSilver projects) from GitHub, shows what's new
   (or "Already up to date"), rebuilds and copies to the SD card the same way as **Build and install**.
   Your game files, the build cache and your save are never touched; the save is backed up before every copy.
+- Every build makes sure each project points at the right GitHub repo and branch (main), fixing it if needed (your game
+  files and saves are never touched). Right before copying it checks GitHub again; if new code was pushed during the build it
+  updates and does a quick rebuild (up to 2 times). The done message and `How to put this on your 3DS.txt` show the
+  exact version built (commit and date).
 - **Build and install** also checks GitHub for game updates each time. To stop that, tick **Advanced > Offline**.
 - If the window says **"A newer builder is available"**, click it and download the new `Pokemon3DSBuilder.exe`.
 - Your own edits to a project folder are kept with `git stash` before an update (power users: `git stash list`).
