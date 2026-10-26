@@ -6,6 +6,22 @@ No game files are in this repo or in the download. Everything happens on your co
 > **Platinum status:** the Platinum project ([3ds-platinum](https://github.com/unowncollectables/3ds-platinum)) is **not public yet**.
 > Until it is, the Platinum build stops at "Downloading the project" with a message saying so. SoulSilver works today.
 
+## What this installs and what you need
+
+**The builder installs everything by itself.** The first time you press the green button it sets up:
+- **WSL + Ubuntu 24.04** (a small Linux inside Windows, from Microsoft). Windows shows a permission box (click **Yes**) and asks
+  you to **restart once**. After the restart the builder opens again by itself. An Ubuntu window may ask you to make a
+  user name and password once: pick anything you will remember.
+- **Build tools inside Ubuntu**: git, make, compilers, devkitPro (3DS toolchain), and the Python modules ndspy, pillow, numpy.
+  It may ask for permission once more. Nothing is installed in Windows itself except WSL.
+- **The game projects** (downloaded from GitHub, and updated on every build).
+
+**What you still need:**
+- Windows 10 (version 2004 or newer) or Windows 11, with **internet** and about **15 GB free**.
+- **Virtualization turned on** in the PC's BIOS. It is on for most PCs; if not, the builder tells you.
+- Time: the **first build takes about 1-2 hours** (mostly downloading and compiling). Later builds take minutes.
+- A **New** 3DS / New 2DS XL with custom firmware, and **your own** game dump.
+
 ## What you need
 
 - A Windows 10 or 11 PC (about 15 GB free space, internet).
