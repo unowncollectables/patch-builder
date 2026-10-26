@@ -46,7 +46,7 @@ No game files are in this repo or in the download. Everything happens on your co
 
 ### Updating (you already have it installed)
 
-- Press the blue **Update** button. It gets the newest version of the ticked game(s) from GitHub, shows what's new
+- Press the blue **Update** button. It does **not** update the builder itself: it downloads the newest **game code** (the Platinum/SoulSilver projects) from GitHub, shows what's new
   (or "Already up to date"), rebuilds and copies to the SD card the same way as **Build and install**.
   Your game files, the build cache and your save are never touched; the save is backed up before every copy.
 - **Build and install** also checks GitHub for game updates each time. To stop that, tick **Advanced > Offline**.
@@ -75,6 +75,7 @@ If you skipped the SD card, copy the files into those folders yourself.
 
 | You see | Do this |
 |---|---|
+| "cannot see SD card F:" (v1.0.7 and older) | Use v1.0.8 or newer: it copies to the SD card from Windows itself. |
 | "Windows protected your PC" (blue SmartScreen box) | Normal for a new download. Press **More info**, then **Run anyway**. |
 | "No module named 'ndspy'" or "built without following Pokemon" | Advanced > **Reinstall tools**, then press **Build and install** again. Platinum still installs without following Pokemon either way. |
 | "The Platinum project is not public yet" | Not your fault. Wait for the public release, then press the button again. |

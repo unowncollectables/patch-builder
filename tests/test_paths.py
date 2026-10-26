@@ -12,18 +12,41 @@ class DrivePaths(unittest.TestCase):
         self.assertIsNone(b.drive_to_mnt("/media/me/SD"))
         self.assertIsNone(b.drive_to_mnt("\\\\wsl$\\Ubuntu\\home"))
 
-    def test_sd_reaches_build_command(self):
+    def test_sd_not_given_to_wsl_on_windows(self):
         old = b.IS_WIN
         b.IS_WIN = True
         try:
             for p in ("F:\\", "F:", "f:/"):
-                cmd = b.build_command({"repo": "/home/me/3ds-platinum", "sd": p, "platinum": "C:\\roms\\pt.nds"}, False, ["deploy"])
-                script = cmd[-1]
-                self.assertIn("export P3DS_SD='/mnt/f/'", script, p)
-                self.assertIn("export P3DS_SD_WANTED=1", script)
-                self.assertIn("-u root", " ".join(b.sd_mount_command(p)))
+                script = b.build_command({"repo": "/home/me/3ds-platinum", "sd": p}, False, ["deploy"])[-1]
+                self.assertNotIn("P3DS_SD", script, p)      # the exe copies to the card itself (sd_copy)
         finally:
             b.IS_WIN = old
+
+
+class SdCopy(unittest.TestCase):
+    def test_copy_keeps_save_and_backs_it_up(self):
+        import tempfile
+        t = tempfile.mkdtemp()
+        out, sd = os.path.join(t, "out"), os.path.join(t, "F")
+        os.makedirs(os.path.join(out, "Platinum")); os.makedirs(os.path.join(sd, "3ds", "platinum3ds"))
+        for n, data in (("platinum3ds_full.3dsx", b"new"), ("platinum3ds.cia", b"cia"), ("followers.bin", b"fb")):
+            open(os.path.join(out, "Platinum", n), "wb").write(data)
+        g = os.path.join(sd, "3ds", "platinum3ds")
+        open(os.path.join(g, "platinum.sav"), "wb").write(b"SAVE")
+        open(os.path.join(g, "platinum3ds_full.3dsx"), "wb").write(b"old")
+        rom = os.path.join(t, "pt.nds"); open(rom, "wb").write(b"rom")
+        ok, msg, d = b.sd_copy("platinum", out, sd, rom, log=lambda *_: None)
+        self.assertTrue(ok, msg)
+        self.assertEqual(open(os.path.join(g, "platinum.sav"), "rb").read(), b"SAVE")
+        self.assertEqual(len(os.listdir(os.path.join(g, "save_backups"))), 1)
+        self.assertEqual(open(os.path.join(g, "platinum3ds_full.3dsx"), "rb").read(), b"new")
+        self.assertEqual(open(os.path.join(g, "platinum3ds_full.3dsx.prev"), "rb").read(), b"old")
+        self.assertTrue(os.path.isfile(os.path.join(g, "platinum.nds")))
+        self.assertTrue(os.path.isfile(os.path.join(g, "followers.bin")))
+        self.assertTrue(os.path.isfile(os.path.join(sd, "cias", "platinum3ds.cia")))
+        ok, msg, _ = b.sd_copy("platinum", out, os.path.join(t, "nope"), rom, log=lambda *_: None)
+        self.assertFalse(ok)
+        self.assertIn("not there", msg)
 
 
 class OutputFolder(unittest.TestCase):
