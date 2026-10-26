@@ -10,7 +10,7 @@ Package as an .exe with build_exe.bat (PyInstaller). Standard library only.
 """
 import hashlib, json, os, re, string, subprocess, sys, threading, queue, urllib.request, webbrowser
 
-VERSION = "1.0.6"   # bump before tagging a release; compared with the newest GitHub release
+VERSION = "1.0.7"   # bump before tagging a release; compared with the newest GitHub release
 RELEASES_API = "https://api.github.com/repos/unowncollectables/patch-builder/releases/latest"
 RELEASES_PAGE = "https://github.com/unowncollectables/patch-builder/releases/latest"
 
@@ -61,6 +61,8 @@ SD_STEPS = ("1. Put the SD card in your New 3DS and turn it on.\n"
             "If you copy by hand: the .3dsx and your .nds (renamed platinum.nds) go in SD:/3ds/platinum3ds/, the .cia goes in SD:/cias/.")
 
 HINTS = [
+    (r"0x80370102|Virtual Machine Platform|virtualization|HCS_E_HYPERV_NOT_INSTALLED",
+     "Windows cannot start Linux because virtualization is off. Turn on 'Virtualization' (Intel VT-x / AMD SVM) in your PC's BIOS/UEFI settings, then press the button again."),
     (r"Platinum project is not public|could not read Username|Repository not found|Authentication failed",
      "The Platinum project is not public yet, so the builder cannot download it. Nothing is wrong with your computer or game file. Wait for the public release, then press the button again."),
     (r"No space left on device", "The disk is full. Free up about 10 GB and press the button again."),
@@ -198,6 +200,24 @@ def sudo_ok():
         return subprocess.run(["sudo", "-n", "true"], capture_output=True, timeout=5).returncode == 0
     except Exception:
         return False
+
+
+def install_wsl():
+    """Windows: start 'wsl --install -d Ubuntu-24.04' elevated (UAC prompt) and re-open this builder once after the restart.
+    Ubuntu 24.04 because the animated 3D HOME Menu banner needs Python 3.12. Returns (ok, error text)."""
+    try:
+        subprocess.run(["powershell", "-NoProfile", "-Command",
+                        "Start-Process wsl -ArgumentList '--install','-d','Ubuntu-24.04' -Verb RunAs"],
+                       creationflags=NO_WINDOW, timeout=120)
+    except Exception as e:
+        return False, str(e)
+    if getattr(sys, "frozen", False):       # resume after the restart: HKCU RunOnce needs no admin
+        try:
+            subprocess.run(["reg", "add", r"HKCU\Software\Microsoft\Windows\CurrentVersion\RunOnce", "/v", "Pokemon3DSBuilder",
+                            "/t", "REG_SZ", "/d", '"%s"' % sys.executable, "/f"], creationflags=NO_WINDOW, timeout=30)
+        except Exception:
+            pass
+    return True, ""
 
 
 def wsl_state():
@@ -889,21 +909,18 @@ def run_gui():
                 return
         w = wsl_state()
         if w != "ok":
-            if w == "no-distro":
-                messagebox.showerror("Linux needed", "WSL is installed but has no Linux yet.\n\nOpen PowerShell and run:\n"
-                                                     "    wsl --install -d Ubuntu\nthen restart Windows and press the button again.")
-                return
-            if messagebox.askyesno("WSL needed", "This builder needs WSL (Linux inside Windows), which is not installed.\n\n"
-                                                 "Install it now? Windows asks for permission, then you restart the computer "
-                                                 "and press the button again."):
-                try:
-                    subprocess.run(["powershell", "-NoProfile", "-Command",
-                                    "Start-Process wsl -ArgumentList '--install','-d','Ubuntu' -Verb RunAs"],
-                                   creationflags=NO_WINDOW)
-                    messagebox.showinfo("WSL", "When the installer finishes, restart Windows, open Ubuntu once to make a "
-                                               "user name, then come back here.")
-                except Exception as e:
-                    messagebox.showerror("WSL", "Could not start the installer (%s).\nRun  wsl --install  in an admin PowerShell." % e)
+            what = ("WSL is installed but has no Linux yet." if w == "no-distro" else
+                    "This builder needs WSL (a small Linux that runs inside Windows), which is not installed yet.")
+            if messagebox.askyesno("One-time setup", what + "\n\nInstall it now? Windows asks for permission (click Yes), "
+                                   "then asks you to restart. After the restart this builder opens again by itself; an Ubuntu "
+                                   "window may ask you to make a user name and password once - pick anything you will remember."):
+                ok_, err = install_wsl()
+                if ok_:
+                    messagebox.showinfo("One-time setup", "The installer is running. When it says so, restart the computer.\n\n"
+                                        "After the restart the builder opens again; press the green button to carry on.")
+                else:
+                    messagebox.showerror("One-time setup", "Could not start the installer (%s).\n\nOpen PowerShell as administrator "
+                                         "and run:\n    wsl --install -d Ubuntu-24.04\nthen restart." % err)
             return
         if pipe == "full" and not messagebox.askokcancel("Rebuild everything", "This rebuilds the whole game from scratch and "
                                                          "takes a long time. Continue?"):
