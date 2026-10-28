@@ -38,10 +38,11 @@ def run_patch(args, data, cwd):
 
 def state(data, args, cwd):
     """'apply' (not in the tree yet) | 'done' (already in) | 'conflict'"""
-    if run_patch(["-N", "--dry-run"] + args, data, cwd).returncode == 0:
-        return "apply"
+    # Reverse first: a patch that only adds lines also dry-runs forward when it is already in, which re-applied it twice.
     if run_patch(["-R", "--dry-run"] + args, data, cwd).returncode == 0:
         return "done"
+    if run_patch(["-N", "--dry-run"] + args, data, cwd).returncode == 0:
+        return "apply"
     return "conflict"
 
 
@@ -91,6 +92,8 @@ class Item:
             st = state(old, self.args, self.cwd)
             return {"done": "revert", "apply": "forget"}.get(st, "conflict")
         if old is not None and old != cur:           # patch file was edited since it was applied
+            if state(cur, self.args, self.cwd) == "done":   # new version already in the tree (hand-applied)
+                return "record"
             if state(old, self.args, self.cwd) == "done":
                 return "replace" if replace_fits(old, cur, self.args, self.cwd) else "conflict"
         st = state(cur, self.args, self.cwd)
