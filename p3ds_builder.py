@@ -10,7 +10,7 @@ Package as an .exe with build_exe.bat (PyInstaller). Standard library only.
 """
 import hashlib, json, os, re, string, subprocess, sys, threading, queue, time, urllib.request, webbrowser
 
-VERSION = "1.1.3"   # bump before tagging a release; compared with the newest GitHub release
+VERSION = "1.1.4"   # bump before tagging a release; compared with the newest GitHub release
 RELEASES_API = "https://api.github.com/repos/unowncollectables/patch-builder/releases/latest"
 RELEASES_PAGE = "https://github.com/unowncollectables/patch-builder/releases/latest"
 
@@ -387,6 +387,22 @@ def preflight_problems(path, offline=False):
         except Exception:
             out.append("This computer could not reach github.com. Check your internet connection (the builder downloads the "
                        "project and the build tools).")
+    return out
+
+
+def pc_report(path=""):
+    """Plain-English health report of this PC for the Check setup button: [(ok, text)]."""
+    out = []
+    if IS_WIN:
+        w = wsl_state()
+        out.append((w == "ok", {"ok": "WSL + Ubuntu: installed and starting.",
+                                "no-wsl": "WSL: not installed yet (the green button installs it).",
+                                "no-distro": "WSL: installed but Ubuntu is missing (the green button installs it).",
+                                "no-virt": "WSL: installed but Windows cannot start it (virtualization / Virtual Machine Platform / "
+                                           "hypervisor is off). Press the green button for the one-click fix. Windows says: "
+                                           + wsl_probe_text()[:200].replace("\n", " ")}[w]))
+    probs = preflight_problems(path)
+    out.append((not probs, "Disk space and internet: OK." if not probs else " ".join(probs)))
     return out
 
 
@@ -1112,6 +1128,10 @@ def run_gui():
 
     def build_once(pipe, c):
         ok = True
+        if pipe == "check":
+            q.put(("log", "This PC:\n", None))
+            for good, text in pc_report(c["out"]):
+                q.put(("log", "  [%s] %s\n" % ("ok" if good else "MISSING", text), "good" if good else "bad"))
         games = selected_games(c)
         plans = []      # (game, needs_root, steps)
         if pipe in ("auto", "full", "quick", "check", "install", "test"):
