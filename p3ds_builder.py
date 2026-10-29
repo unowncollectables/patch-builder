@@ -1045,15 +1045,21 @@ def run_gui():
                 return
         w = wsl_state()
         if w != "ok":
-            what = ("WSL is installed but has no Linux yet." if w == "no-distro" else
-                    "This builder needs WSL (a small Linux that runs inside Windows), which is not installed yet.")
-            if messagebox.askyesno("One-time setup", what + "\n\nInstall it now? Windows asks for permission (click Yes), "
-                                   "then asks you to restart. After the restart this builder opens again by itself; an Ubuntu "
-                                   "window may ask you to make a user name and password once - pick anything you will remember."):
+            what = ("Windows needs a small free add-on called WSL, which lets this builder compile the game. "
+                    "Your Windows has it set up only partly." if w == "no-distro" else
+                    "Windows needs a small free add-on called WSL, which lets this builder compile the game. "
+                    "It is not installed yet.")
+            if messagebox.askyesno("One-time setup (about 10 minutes)", what + "\n\nThis happens once, never again:\n"
+                                   "  1. Click Yes, then Yes again when Windows asks for permission.\n"
+                                   "  2. Wait for the install window to finish, then restart the computer.\n"
+                                   "  3. This builder opens by itself. If a black window asks for a user name and "
+                                   "password, type anything you will remember.\n"
+                                   "  4. Press the green button again. That is all.\n\nInstall it now?"):
                 ok_, err = install_wsl()
                 if ok_:
-                    messagebox.showinfo("One-time setup", "The installer is running. When it says so, restart the computer.\n\n"
-                                        "After the restart the builder opens again; press the green button to carry on.")
+                    messagebox.showinfo("One-time setup", "The installer is running in its own window.\n\n"
+                                        "When it says it is done, restart the computer. This builder then opens by itself; "
+                                        "press the green button to carry on.")
                 else:
                     messagebox.showerror("One-time setup", "Could not start the installer (%s).\n\nOpen PowerShell as administrator "
                                          "and run:\n    wsl --install -d Ubuntu-24.04\nthen restart." % err)
