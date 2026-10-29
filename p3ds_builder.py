@@ -298,6 +298,13 @@ def wsl_state():
     except Exception:
         return "no-wsl"
     if r.returncode == 0:
+        try:        # WSL runs, but is a real Ubuntu in it? (e.g. only Docker's hidden helper Linux counts as "working")
+            lr = subprocess.run(["wsl.exe", "-l", "-q"], capture_output=True, timeout=30, creationflags=NO_WINDOW)
+            names = lr.stdout.replace(b"\x00", b"").decode("utf-8", "replace").lower().split()
+            if names and not any(n.startswith(("ubuntu", "debian")) for n in names):
+                return "no-distro"
+        except Exception:
+            pass
         return "ok"
     out = (r.stdout + r.stderr).replace(b"\x00", b"").decode("utf-8", "replace").lower()
     return "no-distro" if "distribution" in out else "no-wsl"
