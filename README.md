@@ -89,6 +89,7 @@ If you skipped the SD card, copy the files into those folders yourself.
 | "No module named 'ndspy'" or "built without following Pokemon" | Advanced > **Reinstall tools**, then press **Build and install** again. Platinum still installs without following Pokemon either way. |
 | "The Platinum project is not public yet" | Not your fault. Wait for the public release, then press the button again. |
 | Red cross: "another region" / "Rev 0" / "trimmed" / "has been changed" | You need an untouched US Rev 1 dump, 128 MB. Dump your cartridge again (for example with GodMode9). |
+| "WSL cannot start" / "virtualization is not enabled" / restart loop | Windows cannot run WSL2. The builder explains this and offers **Turn on** for the two Windows settings it needs (Virtual Machine Platform and the hypervisor); then restart once. Common on PCs set up for VirtualBox or VMware (update them afterwards if they complain). If it still fails, turn on Virtualization (Intel VT-x / AMD SVM) in the PC's BIOS/UEFI. Advanced > **Check setup** shows a plain report of this PC. |
 | "WSL has no Linux installed" | Open PowerShell and run `wsl --install -d Ubuntu`, restart, try again. |
 | "Check that this computer is online" | Connect to the internet and press the button again. |
 | "The disk is full" | Free about 15 GB and try again. |
