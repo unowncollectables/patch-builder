@@ -10,7 +10,7 @@ Package as an .exe with build_exe.bat (PyInstaller). Standard library only.
 """
 import hashlib, json, os, re, string, subprocess, sys, threading, queue, time, urllib.request, webbrowser
 
-VERSION = "1.1.1"   # bump before tagging a release; compared with the newest GitHub release
+VERSION = "1.1.2"   # bump before tagging a release; compared with the newest GitHub release
 RELEASES_API = "https://api.github.com/repos/unowncollectables/patch-builder/releases/latest"
 RELEASES_PAGE = "https://github.com/unowncollectables/patch-builder/releases/latest"
 
@@ -275,9 +275,15 @@ def install_wsl():
     """Windows: start 'wsl --install -d Ubuntu-24.04' elevated (UAC prompt) and re-open this builder once after the restart.
     Ubuntu 24.04 because the animated 3D HOME Menu banner needs Python 3.12. Returns (ok, error text)."""
     try:
-        subprocess.run(["powershell", "-NoProfile", "-Command",
-                        "Start-Process wsl -ArgumentList '--install','-d','Ubuntu-24.04' -Verb RunAs"],
-                       creationflags=NO_WINDOW, timeout=120)
+        # -Wait -PassThru: only report success if the elevated installer really ran and finished (a declined
+        # permission box or a failed install gives a non-zero code); the installer gets its own visible console window.
+        r = subprocess.run(["powershell", "-NoProfile", "-Command",
+                            "try { $p = Start-Process wsl -ArgumentList '--install','-d','Ubuntu-24.04' -Verb RunAs "
+                            "-WindowStyle Normal -Wait -PassThru; exit $p.ExitCode } catch { Write-Output $_.Exception.Message; exit 99 }"],
+                           capture_output=True, creationflags=NO_WINDOW, timeout=3600)
+        if r.returncode != 0:
+            msg = (r.stdout + r.stderr).replace(b"\x00", b"").decode("utf-8", "replace").strip()
+            return False, ("the permission box was declined or the install failed (code %d). %s" % (r.returncode, msg[:200])).strip()
     except Exception as e:
         return False, str(e)
     if getattr(sys, "frozen", False):       # resume after the restart: HKCU RunOnce needs no admin
@@ -1160,14 +1166,14 @@ def run_gui():
                                    "  3. This builder opens by itself. If a black window asks for a user name and "
                                    "password, type anything you will remember.\n"
                                    "  4. Press the green button again. That is all.\n\nInstall it now?"):
-                ok_, err = install_wsl()
-                if ok_:
-                    messagebox.showinfo("One-time setup", "The installer is running in its own window.\n\n"
-                                        "When it says it is done, restart the computer. This builder then opens by itself; "
-                                        "press the green button to carry on.")
-                else:
-                    messagebox.showerror("One-time setup", "Could not start the installer (%s).\n\nOpen PowerShell as administrator "
-                                         "and run:\n    wsl --install -d Ubuntu-24.04\nthen restart." % err)
+                status.set("Installing WSL + Ubuntu. Windows may show a black window for a few minutes. Please wait...")
+                activity.set("Do not close this window. When the install finishes, a message here tells you to restart.")
+                st["t0"] = 0
+                set_busy(True)
+
+                def wsl_job():
+                    q.put(("wsldone",) + install_wsl())
+                threading.Thread(target=wsl_job, daemon=True).start()
             return
         if pipe == "full" and not messagebox.askokcancel("Rebuild everything", "This rebuilds the whole game from scratch and "
                                                          "takes a long time. Continue?"):
@@ -1267,6 +1273,18 @@ def run_gui():
                         st["done_w"] += STEP_WEIGHT.get(a, 2)
                     st["cur"] = ""
                     prog.configure(value=100.0 * min(st["done_w"], st["plan_w"]) / max(st["plan_w"], 1))
+                elif kind == "wsldone":
+                    set_busy(False)
+                    activity.set("")
+                    if a:
+                        status.set("WSL + Ubuntu installed. Restart the computer now.")
+                        messagebox.showinfo("One-time setup", "Installed. Now restart the computer.\n\nThis builder opens again by "
+                                            "itself; press the green button to carry on.")
+                    else:
+                        status.set("")
+                        messagebox.showerror("One-time setup", "The installer did not finish: %s\n\nYou can do it by hand: open "
+                                             "PowerShell as administrator (right-click Start), run:\n    wsl --install -d Ubuntu-24.04\n"
+                                             "then restart the computer and open this builder again." % b)
                 elif kind == "askclean":
                     if not a:
                         messagebox.showinfo("Clean up", "Nothing to clean up. Your saves, save backups, game files and the build cache are always kept.")
