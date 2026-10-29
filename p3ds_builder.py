@@ -8,9 +8,9 @@ game(s) and copies them to the card (optionally also a HOME Menu .cia). Everythi
 On Windows it runs the build inside WSL2 (wsl.exe); on Linux it runs bash directly.
 Package as an .exe with build_exe.bat (PyInstaller). Standard library only.
 """
-import hashlib, json, os, re, string, subprocess, sys, threading, queue, urllib.request, webbrowser
+import hashlib, json, os, re, string, subprocess, sys, threading, queue, time, urllib.request, webbrowser
 
-VERSION = "1.1.0"   # bump before tagging a release; compared with the newest GitHub release
+VERSION = "1.1.1"   # bump before tagging a release; compared with the newest GitHub release
 RELEASES_API = "https://api.github.com/repos/unowncollectables/patch-builder/releases/latest"
 RELEASES_PAGE = "https://github.com/unowncollectables/patch-builder/releases/latest"
 
@@ -37,6 +37,14 @@ FRIENDLY = {"check": "Checking setup", "needs": "Working out what is needed", "s
             "testpatches": "Testing your patches", "relink": "Compiling and linking",
             "followers": "Making following-Pokemon data", "deploy": "Copying to the SD card",
             "get": "Downloading the project", "build": "Compiling the game (first time, long)", "cia": "Making the HOME Menu installer (.cia)"}
+
+# Rough weight and expected seconds of each step: the progress bar fills by weight and creeps inside a long step,
+# so a first-time install visibly moves instead of sitting at 0% for half an hour.
+STEP_WEIGHT = {"setup": 6, "link": 1, "stage": 1, "pspoke": 4, "full": 20, "build": 20, "patches": 3, "testpatches": 3,
+               "relink": 4, "followers": 2, "deploy": 1, "cia": 3, "check": 1}
+STEP_SECS = {"setup": 600, "pspoke": 300, "full": 1500, "build": 1500, "relink": 240, "patches": 90, "cia": 180}
+NEED_TEXT = {"setup": "the build tools (Linux packages and devkitPro)", "link": "the project folder link",
+             "pspoke": "the Platinum game base (pspoke)", "full": "the first full build of the game"}
 
 # Advanced buttons: name -> [(needs root, steps)]. "auto" (the big button) is planned at run time.
 PIPELINES = {
@@ -290,9 +298,67 @@ def wsl_state():
     except Exception:
         return "no-wsl"
     if r.returncode == 0:
+        try:        # WSL runs, but is a real Ubuntu in it? (e.g. only Docker's hidden helper Linux counts as "working")
+            lr = subprocess.run(["wsl.exe", "-l", "-q"], capture_output=True, timeout=30, creationflags=NO_WINDOW)
+            names = lr.stdout.replace(b"\x00", b"").decode("utf-8", "replace").lower().split()
+            if names and not any(n.startswith(("ubuntu", "debian")) for n in names):
+                return "no-distro"
+        except Exception:
+            pass
         return "ok"
     out = (r.stdout + r.stderr).replace(b"\x00", b"").decode("utf-8", "replace").lower()
     return "no-distro" if "distribution" in out else "no-wsl"
+
+
+def preflight_problems(path, offline=False):
+    """Plain-English warnings found before a build starts: low disk space, no internet. Empty list = all fine."""
+    out = []
+    try:
+        import shutil
+        d = path if os.path.isdir(path) else os.path.expanduser("~")
+        free = shutil.disk_usage(d).free // (1 << 30)
+        if free < 10:
+            out.append("Only %d GB free on the drive for the finished game. The first build needs about 10 GB free." % free)
+    except Exception:
+        pass
+    if not offline:
+        try:
+            urllib.request.urlopen("https://github.com", timeout=6).close()
+        except Exception:
+            out.append("This computer could not reach github.com. Check your internet connection (the builder downloads the "
+                       "project and the build tools).")
+    return out
+
+
+def find_nds(want):
+    """Look for a matching .nds in the usual places (not a full disk scan). Returns a path or ''."""
+    home = os.path.expanduser("~")
+    dirs = [os.path.join(home, d) for d in ("Downloads", "Desktop", "Documents", "Games", "Roms", "ROMs")] + [home]
+    if IS_WIN:
+        dirs += [os.path.join(os.environ.get("OneDrive", ""), d) for d in ("Desktop", "Documents") if os.environ.get("OneDrive")]
+    seen = set()
+    for d in dirs:
+        for depth, base in ((0, d), (1, d)):
+            try:
+                subs = [base] if depth == 0 else [os.path.join(d, x) for x in os.listdir(d) if os.path.isdir(os.path.join(d, x))][:60]
+            except OSError:
+                continue
+            for sub in subs:
+                try:
+                    names = os.listdir(sub)
+                except OSError:
+                    continue
+                for n in names:
+                    f = os.path.join(sub, n)
+                    if n.lower().endswith(".nds") and f not in seen and os.path.isfile(f):
+                        seen.add(f)
+                        try:
+                            ok, _ = rom_report(f, want)
+                        except Exception:
+                            ok = False
+                        if ok:
+                            return f
+    return ""
 
 
 def rom_report(path, want="platinum"):
@@ -460,6 +526,7 @@ def load_settings():
     out["offline"] = bool(d.get("offline"))   # beginners want both the .3dsx and the HOME Menu .cia
     out["want_plat"] = bool(d.get("want_plat", True))
     out["want_ss"] = bool(d.get("want_ss", False))
+    out["autofind"] = bool(d.get("autofind", False))
     return out
 
 
@@ -528,10 +595,13 @@ def run_gui():
     want_plat = tk.BooleanVar(value=cfg["want_plat"])
     want_ss = tk.BooleanVar(value=cfg["want_ss"])
     want_cia = tk.BooleanVar(value=cfg["cia"])
+    autofind = tk.BooleanVar(value=cfg["autofind"])
     status = tk.StringVar(value="")
     q = queue.Queue()
     st = {"proc": None, "busy": False, "cancel": False, "hint": "", "failed": "", "installed": [], "project": {},
-          "planned": 0, "done_steps": 0, "cia": False}
+          "planned": 0, "done_steps": 0, "cia": False,
+          "plan_w": 1, "done_w": 0, "cur": "", "t0": 0, "t_step": 0, "last": ""}
+    activity = tk.StringVar(value="")
 
     GOOD, BAD, MUTED = "#1a7f37", "#cf222e", "#57606a"
     big = ("Segoe UI", 11) if IS_WIN else ("TkDefaultFont", 11)
@@ -611,6 +681,21 @@ def run_gui():
     games_area.pack(fill="x")
     field(games_area, "platinum", "2a.  Your Pokemon Platinum game file (.nds, US Rev 1)", "file")
     field(games_area, "soulsilver", "2b.  Your Pokemon SoulSilver game file (.nds, US). Optional for Platinum: adds following Pokemon", "file")
+    def do_autofind(*_):
+        if not autofind.get():
+            return
+        found = []
+        for g in ("platinum", "soulsilver"):
+            if not vars_[g].get().strip():
+                f = find_nds(g)
+                if f:
+                    vars_[g].set(os.path.normpath(f) if IS_WIN else f)
+                    found.append("%s: %s" % (GAMES[g]["name"], f))
+        if found:
+            messagebox.showinfo("Game file found", "Found and filled in:\n\n" + "\n".join(found) +
+                                "\n\nIt is only read, never changed.")
+    ttk.Checkbutton(games_area, text="Look for my game files automatically (Downloads, Desktop, Documents)",
+                    variable=autofind, command=do_autofind).pack(anchor="w", pady=(0, 6))
     follow_note = ttk.Label(games_area, text="", foreground=MUTED, wraplength=720)
     field(outer, "out", "3.  Where to save the finished game on this PC (the .cia and .3dsx always go here)", "dir")
     sd_row = field(outer, "sd", "4.  Your 3DS SD card (optional, plugged into this computer)", "dir")
@@ -646,6 +731,7 @@ def run_gui():
 
     prog = ttk.Progressbar(outer, mode="determinate", maximum=100)
     prog.pack(fill="x")
+    ttk.Label(outer, textvariable=activity, foreground=MUTED, wraplength=720).pack(anchor="w", pady=(2, 0))
     srow = ttk.Frame(outer)
     srow.pack(fill="x", pady=(4, 0))
     ttk.Label(srow, textvariable=status, font=big).pack(side="left")
@@ -805,6 +891,7 @@ def run_gui():
         c = {k: vars_[k].get().strip().strip('"') for k in FIELDS}
         c["want_plat"], c["want_ss"], c["cia"] = want_plat.get(), want_ss.get(), want_cia.get()
         c["offline"] = offline.get()
+        c["autofind"] = autofind.get()
         c["out"] = c.get("out") or DEFAULT_OUT
         return c
 
@@ -882,6 +969,8 @@ def run_gui():
                 continue
             tag = "bad" if line.startswith(("ERROR", "  [MISSING]", "  CONFLICT", "  FAIL")) else \
                   ("good" if line.startswith(("  [ok]", "  new", "  updated", "  removed")) else None)
+            if line.strip():
+                st["last"] = line.strip()
             q.put(("log", line, tag))
         rc = p.wait()
         return rc == 0 and not st["cancel"], needs, rc
@@ -981,6 +1070,9 @@ def run_gui():
                     ok, needs = run_steps(c, g, False, ["needs"])
                     if not ok:
                         break
+                    miss = [NEED_TEXT[n] for n in needs if n in NEED_TEXT]
+                    q.put(("log", ("%s: still needed: %s.\n" % (GAMES[g]["name"], "; ".join(miss))) if miss else
+                           "%s: everything it needs is already installed.\n" % GAMES[g]["name"], None))
                     if "full" in needs:
                         q.put(("log", "First build of %s: this one takes a long time. Later builds are quick.\n" % GAMES[g]["name"], None))
                 for root_needed, steps in plan_for(g, pipe, c, needs):
@@ -997,6 +1089,8 @@ def run_gui():
         ordered += [p for p in plans if not p[1]]
         st["planned"] = sum(len(s) for _, _, s in ordered)
         st["done_steps"] = 0
+        st["plan_w"] = sum(STEP_WEIGHT.get(x, 2) for _, _, s in ordered for x in s)
+        st["done_w"] = 0
         for g, rt, steps in ordered:
             if not ok or st["cancel"]:
                 ok = False
@@ -1012,6 +1106,13 @@ def run_gui():
             c["offline"] = False
             pipe = "auto"
         games = selected_games(c)
+        if c.get("autofind"):
+            for g in games:
+                if not c[g]:
+                    f = find_nds(g)
+                    if f:
+                        vars_[g].set(os.path.normpath(f) if IS_WIN else f)
+                        c[g] = vars_[g].get()
         if not games:
             messagebox.showwarning("Which game?", "Tick Pokemon Platinum, Pokemon SoulSilver, or both, in step 1.")
             return
@@ -1043,17 +1144,27 @@ def run_gui():
             if not messagebox.askyesno("No SD card", "No SD card is picked, so the game will only be saved in your output folder "
                                                      "(not copied to a card).\n\nContinue without the SD card?"):
                 return
+        if pipe in ("auto", "full"):
+            warn = preflight_problems(c["out"], c.get("offline"))
+            if warn and not messagebox.askyesno("Before we start", "\n\n".join(warn) + "\n\nContinue anyway?"):
+                return
         w = wsl_state()
         if w != "ok":
-            what = ("WSL is installed but has no Linux yet." if w == "no-distro" else
-                    "This builder needs WSL (a small Linux that runs inside Windows), which is not installed yet.")
-            if messagebox.askyesno("One-time setup", what + "\n\nInstall it now? Windows asks for permission (click Yes), "
-                                   "then asks you to restart. After the restart this builder opens again by itself; an Ubuntu "
-                                   "window may ask you to make a user name and password once - pick anything you will remember."):
+            what = ("Windows needs a small free add-on called WSL, which lets this builder compile the game. "
+                    "Your Windows has it set up only partly." if w == "no-distro" else
+                    "Windows needs a small free add-on called WSL, which lets this builder compile the game. "
+                    "It is not installed yet.")
+            if messagebox.askyesno("One-time setup (about 10 minutes)", what + "\n\nThis happens once, never again:\n"
+                                   "  1. Click Yes, then Yes again when Windows asks for permission.\n"
+                                   "  2. Wait for the install window to finish, then restart the computer.\n"
+                                   "  3. This builder opens by itself. If a black window asks for a user name and "
+                                   "password, type anything you will remember.\n"
+                                   "  4. Press the green button again. That is all.\n\nInstall it now?"):
                 ok_, err = install_wsl()
                 if ok_:
-                    messagebox.showinfo("One-time setup", "The installer is running. When it says so, restart the computer.\n\n"
-                                        "After the restart the builder opens again; press the green button to carry on.")
+                    messagebox.showinfo("One-time setup", "The installer is running in its own window.\n\n"
+                                        "When it says it is done, restart the computer. This builder then opens by itself; "
+                                        "press the green button to carry on.")
                 else:
                     messagebox.showerror("One-time setup", "Could not start the installer (%s).\n\nOpen PowerShell as administrator "
                                          "and run:\n    wsl --install -d Ubuntu-24.04\nthen restart." % err)
@@ -1071,6 +1182,7 @@ def run_gui():
         log.delete("1.0", "end")
         log.configure(state="disabled")
         prog.configure(value=0)
+        st["t0"], st["last"], st["cur"] = time.time(), "", ""
         set_busy(True)
         status.set("Starting...")
         threading.Thread(target=worker, args=(pipe, c), daemon=True).start()
@@ -1122,6 +1234,20 @@ def run_gui():
             except Exception:
                 pass
 
+    def tick():
+        """Once a second while busy: creep the bar inside the current step and show elapsed time + last output line."""
+        if st["busy"] and st["t0"]:
+            el = int(time.time() - st["t0"])
+            cur = st["cur"]
+            frac = 0.0
+            if cur and cur not in ("needs", "get"):
+                frac = min(0.9, (time.time() - st["t_step"]) / STEP_SECS.get(cur, 60)) * STEP_WEIGHT.get(cur, 2)
+                prog.configure(value=100.0 * min(st["done_w"] + frac, st["plan_w"]) / max(st["plan_w"], 1))
+            last = st["last"][:90]
+            activity.set("Working for %d:%02d. Still going, safe to leave it.%s" %
+                         (el // 60, el % 60, ("  Latest: " + last) if last else ""))
+        root.after(1000, tick)
+
     def pump():
         try:
             while True:
@@ -1129,6 +1255,7 @@ def run_gui():
                 if kind == "log":
                     emit(a, b)
                 elif kind == "step":
+                    st["cur"], st["t_step"] = a, time.time()
                     n = max(st["planned"], 1)
                     if a not in ("needs", "get"):
                         status.set("Step %d of %d: %s..." % (min(st["done_steps"] + 1, n), n, FRIENDLY.get(a, a)))
@@ -1137,7 +1264,9 @@ def run_gui():
                 elif kind == "stepdone":
                     if a not in ("needs", "get"):
                         st["done_steps"] += 1
-                    prog.configure(value=100.0 * st["done_steps"] / max(st["planned"], 1))
+                        st["done_w"] += STEP_WEIGHT.get(a, 2)
+                    st["cur"] = ""
+                    prog.configure(value=100.0 * min(st["done_w"], st["plan_w"]) / max(st["plan_w"], 1))
                 elif kind == "askclean":
                     if not a:
                         messagebox.showinfo("Clean up", "Nothing to clean up. Your saves, save backups, game files and the build cache are always kept.")
@@ -1170,6 +1299,7 @@ def run_gui():
 
     refresh()
     pump()
+    tick()
     root.mainloop()
 
 
