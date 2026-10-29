@@ -36,11 +36,16 @@ No game files are in this repo or in the download. Everything happens on your co
    *Optional:* **following Pokemon** (your Pokemon walks behind you) need your **SoulSilver** game file too. Pick it in box 2b;
    you do not have to tick SoulSilver. Without it, Platinum builds fine, just without following Pokemon.
 3. Press **Browse** and pick your `.nds` file. A **green tick** means it is the right one. A red cross tells you what is wrong.
+   Or tick **Look for my game files automatically** (off by default): the builder looks in Downloads, Desktop and Documents and fills in
+   a file only if it is the right game. It only reads the file.
 4. **Output folder** (box 3): the finished `.cia` and `.3dsx` are always saved here, in `Platinum\` and `SoulSilver\`,
    with a `How to put this on your 3DS.txt`. Default: `Documents\Pokemon 3DS Builds`. **Open game folder** opens it.
 5. Put your 3DS SD card in the computer and press **Find it**. (You can skip this; then the files are just saved on the PC.)
-6. Press the big green **Build and install**. If Windows asks to install **WSL**, say yes and restart the PC when asked, then open the builder and press the button again.
-7. Wait. **The first build takes an hour or more.** Later builds are quick.
+6. Press the big green **Build and install**. Before it starts, it warns you about low disk space or no internet. If WSL/Ubuntu is missing
+   (or only half installed), a **One-time setup** box lists the steps: click Yes, restart when asked, the builder reopens, press the button again.
+7. Wait. **The first build takes an hour or more.** Later builds are quick. The bar shows overall progress, and a line under it shows how long
+   it has been running and the latest output, so you can tell it is still working. The log says what is still needed and what is already installed,
+   so a half-finished install carries on where it stopped.
 8. When it says **Installed!**, put the SD card back in the 3DS, open the **Homebrew Launcher** and start **Platinum 3DS**.
    For a HOME Menu icon, open **FBI** > SD > `cias` > `platinum3ds.cia` > Install.
 
