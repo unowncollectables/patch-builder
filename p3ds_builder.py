@@ -10,7 +10,7 @@ Package as an .exe with build_exe.bat (PyInstaller). Standard library only.
 """
 import hashlib, json, os, re, string, subprocess, sys, threading, queue, time, urllib.request, webbrowser
 
-VERSION = "1.1.2"   # bump before tagging a release; compared with the newest GitHub release
+VERSION = "1.1.3"   # bump before tagging a release; compared with the newest GitHub release
 RELEASES_API = "https://api.github.com/repos/unowncollectables/patch-builder/releases/latest"
 RELEASES_PAGE = "https://github.com/unowncollectables/patch-builder/releases/latest"
 
@@ -295,8 +295,58 @@ def install_wsl():
     return True, ""
 
 
+VIRT_RE = r"virtualization|virtual machine platform|0x80370102|0x80370114|hcs_e_|hyper-v|hypervisor"
+
+
+def wsl_probe_text():
+    """What 'wsl --status' says, cleaned up (shown to the user when WSL will not start)."""
+    try:
+        r = subprocess.run(["wsl.exe", "--status"], capture_output=True, timeout=60, creationflags=NO_WINDOW)
+        return (r.stdout + r.stderr).replace(b"\x00", b"").decode("utf-8", "replace").strip()
+    except Exception as e:
+        return str(e)
+
+
+def wsl_tries():
+    """How many times this builder already ran the WSL installer (kept in a small file beside the settings)."""
+    try:
+        with open(SETTINGS + ".wsl") as f:
+            return int(f.read().strip() or 0)
+    except Exception:
+        return 0
+
+
+def wsl_tried():
+    try:
+        with open(SETTINGS + ".wsl", "w") as f:
+            f.write(str(wsl_tries() + 1))
+    except Exception:
+        pass
+
+
+def enable_wsl_requirements():
+    """Windows: turn on the Windows features WSL2 needs and the hypervisor, elevated (UAC). Returns (ok, error text).
+    Reversible: dism /disable-feature, bcdedit /set hypervisorlaunchtype off."""
+    cmd = ("dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart; $a=$LASTEXITCODE; "
+           "dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart; $b=$LASTEXITCODE; "
+           "bcdedit.exe /set hypervisorlaunchtype auto; $c=$LASTEXITCODE; "
+           "if (($a -ne 0 -and $a -ne 3010) -or ($b -ne 0 -and $b -ne 3010) -or $c -ne 0) { exit 1 } else { exit 0 }")
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-Command",
+                            "try { $p = Start-Process powershell -ArgumentList '-NoProfile','-Command',\"%s\" -Verb RunAs "
+                            "-WindowStyle Normal -Wait -PassThru; exit $p.ExitCode } catch { Write-Output $_.Exception.Message; exit 99 }"
+                            % cmd.replace('"', '`"')],
+                           capture_output=True, creationflags=NO_WINDOW, timeout=1800)
+    except Exception as e:
+        return False, str(e)
+    if r.returncode != 0:
+        return False, "the permission box was declined or a step failed (code %d)" % r.returncode
+    return True, ""
+
+
 def wsl_state():
-    """'ok' | 'no-wsl' | 'no-distro' (always 'ok' off Windows)."""
+    """'ok' | 'no-wsl' | 'no-distro' | 'no-virt' (always 'ok' off Windows). 'no-virt' = Windows will not start WSL2
+    (Virtual Machine Platform off, hypervisor off, or BIOS virtualization off); another restart will not fix that."""
     if not IS_WIN:
         return "ok"
     try:
@@ -313,7 +363,11 @@ def wsl_state():
             pass
         return "ok"
     out = (r.stdout + r.stderr).replace(b"\x00", b"").decode("utf-8", "replace").lower()
-    return "no-distro" if "distribution" in out else "no-wsl"
+    if re.search(VIRT_RE, out):
+        return "no-virt"
+    if "distribution" in out:
+        return "no-distro"
+    return "no-virt" if re.search(VIRT_RE, wsl_probe_text().lower()) else "no-wsl"
 
 
 def preflight_problems(path, offline=False):
@@ -1104,6 +1158,26 @@ def run_gui():
             ok, _ = run_steps(c, g, rt, steps)
         return ok
 
+    def wsl_virt_help():
+        """WSL is installed but Windows will not start it: explain and offer the fix (no more restart loops)."""
+        said = wsl_probe_text()[:400]
+        if messagebox.askyesno("WSL cannot start", "WSL is installed, but Windows cannot start it: virtualization is not "
+                               "available to Windows. Restarting again will not fix this.\n\nWindows says:\n" + said +
+                               "\n\nThis is common on PCs set up for VirtualBox or VMware. The builder can turn on the two Windows "
+                               "settings WSL needs (Virtual Machine Platform, and Windows' own hypervisor). It is reversible. "
+                               "Older VirtualBox/VMware may need an update afterwards.\n\nTurn them on now? "
+                               "(Windows asks for permission; then restart once.)"):
+            status.set("Turning on the Windows settings WSL needs. Please wait...")
+            set_busy(True)
+            st["t0"] = 0
+
+            def fix_job():
+                q.put(("wslfix",) + enable_wsl_requirements())
+            threading.Thread(target=fix_job, daemon=True).start()
+        else:
+            messagebox.showinfo("WSL cannot start", "If it still fails after this, check that Virtualization "
+                                "(Intel VT-x / AMD SVM) is on in the PC's BIOS/UEFI settings.")
+
     def start(pipe):
         if st["busy"]:
             return
@@ -1155,6 +1229,9 @@ def run_gui():
             if warn and not messagebox.askyesno("Before we start", "\n\n".join(warn) + "\n\nContinue anyway?"):
                 return
         w = wsl_state()
+        if w == "no-virt":
+            wsl_virt_help()
+            return
         if w != "ok":
             what = ("Windows needs a small free add-on called WSL, which lets this builder compile the game. "
                     "Your Windows has it set up only partly." if w == "no-distro" else
@@ -1172,7 +1249,10 @@ def run_gui():
                 set_busy(True)
 
                 def wsl_job():
-                    q.put(("wsldone",) + install_wsl())
+                    ok_, err_ = install_wsl()
+                    if ok_:
+                        wsl_tried()
+                    q.put(("wsldone", ok_, (err_, wsl_state() if ok_ else "")))
                 threading.Thread(target=wsl_job, daemon=True).start()
             return
         if pipe == "full" and not messagebox.askokcancel("Rebuild everything", "This rebuilds the whole game from scratch and "
@@ -1276,15 +1356,33 @@ def run_gui():
                 elif kind == "wsldone":
                     set_busy(False)
                     activity.set("")
-                    if a:
-                        status.set("WSL + Ubuntu installed. Restart the computer now.")
-                        messagebox.showinfo("One-time setup", "Installed. Now restart the computer.\n\nThis builder opens again by "
-                                            "itself; press the green button to carry on.")
+                    if a and b[1] == "ok":
+                        status.set("WSL + Ubuntu are ready. Press the green button again.")
+                        messagebox.showinfo("One-time setup", "WSL + Ubuntu are ready. Press the green button again.")
+                    elif a and b[1] == "no-virt":
+                        status.set("")
+                        wsl_virt_help()
+                    elif a:
+                        status.set("Restart the computer now.")
+                        messagebox.showinfo("One-time setup", "The installer finished. Now restart the computer.\n\n"
+                                            "This builder opens again by itself; press the green button to carry on.")
                     else:
                         status.set("")
                         messagebox.showerror("One-time setup", "The installer did not finish: %s\n\nYou can do it by hand: open "
                                              "PowerShell as administrator (right-click Start), run:\n    wsl --install -d Ubuntu-24.04\n"
-                                             "then restart the computer and open this builder again." % b)
+                                             "then restart the computer and open this builder again." % b[0])
+                elif kind == "wslfix":
+                    set_busy(False)
+                    if a:
+                        status.set("Restart the computer, then open this builder again.")
+                        messagebox.showinfo("WSL settings", "Done. Restart the computer now, then open this builder and press "
+                                            "the green button. If WSL still will not start after that, turn on Virtualization "
+                                            "(Intel VT-x / AMD SVM) in the PC's BIOS/UEFI settings.")
+                    else:
+                        status.set("")
+                        messagebox.showerror("WSL settings", "Could not turn them on: %s\n\nBy hand, in PowerShell as administrator:\n"
+                                             "  dism /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart\n"
+                                             "  bcdedit /set hypervisorlaunchtype auto\nthen restart." % b)
                 elif kind == "askclean":
                     if not a:
                         messagebox.showinfo("Clean up", "Nothing to clean up. Your saves, save backups, game files and the build cache are always kept.")
