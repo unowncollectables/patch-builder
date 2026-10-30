@@ -10,7 +10,7 @@ Package as an .exe with build_exe.bat (PyInstaller). Standard library only.
 """
 import hashlib, json, os, re, string, subprocess, sys, threading, queue, time, urllib.request, webbrowser
 
-VERSION = "1.1.5"   # bump before tagging a release; compared with the newest GitHub release
+VERSION = "1.1.6"   # bump before tagging a release; compared with the newest GitHub release
 RELEASES_API = "https://api.github.com/repos/unowncollectables/patch-builder/releases/latest"
 RELEASES_PAGE = "https://github.com/unowncollectables/patch-builder/releases/latest"
 
@@ -342,22 +342,46 @@ def wsl_probe_text():
         return str(e)
 
 
-def wsl_tries():
-    """How many times this builder already ran the WSL installer (kept in a small file beside the settings)."""
+def _wsl_state_file():
+    """(attempts, time of the last attempt) from the small file beside the settings; attempts is 99 once WSL worked."""
     try:
         with open(SETTINGS + ".wsl") as f:
             t = f.read().strip()
-            return 99 if t == "done" else int(t or 0)
+        if t == "done":
+            return 99, 0.0
+        n, _, when = t.partition(",")
+        return int(n or 0), float(when or 0)
     except Exception:
-        return 0
+        return 0, 0.0
+
+
+def wsl_tries():
+    """How many times this builder already ran the WSL installer (99 = WSL has worked here)."""
+    return _wsl_state_file()[0]
 
 
 def wsl_tried():
+    import time
     try:
         with open(SETTINGS + ".wsl", "w") as f:
-            f.write(str(wsl_tries() + 1))
+            f.write("%d,%f" % (wsl_tries() + 1, time.time()))
     except Exception:
         pass
+
+
+def restarted_since_install():
+    """True if Windows has been restarted since the last WSL installer run (the first run only turns the features on;
+    Ubuntu itself is downloaded by a second run after that restart)."""
+    import time
+    when = _wsl_state_file()[1]
+    if not when:
+        return True
+    try:
+        import ctypes
+        up = ctypes.windll.kernel32.GetTickCount64() / 1000.0
+    except Exception:
+        return True
+    return time.time() - up > when + 5
 
 
 def enable_wsl_requirements():
@@ -1297,23 +1321,33 @@ def run_gui():
             return
         if w == "ok":
             wsl_set_done()
-        if w != "ok" and wsl_tries() >= 1:
-            # The installer already ran once: do NOT run it (or ask for a restart) again. Show what is really wrong.
-            messagebox.showwarning("WSL is not ready", "The WSL installer already ran on this PC, so the builder will not "
-                                   "install it again.\n\nWindows says:\n" + (wsl_probe_text()[:300] or "(nothing)") +
+        tries = wsl_tries()
+        if w != "ok" and tries >= 3:
+            # Ran several times and WSL still is not ready: stop installing, show what Windows really says.
+            messagebox.showwarning("WSL is not ready", "The WSL installer already ran on this PC %s times, so the builder "
+                                   "will not run it again.\n\nWindows says:\n" % (tries if tries < 99 else "several") +
+                                   (wsl_probe_text()[:300] or "(nothing)") +
                                    "\n\nTry, in this order:\n"
-                                   "1. If the PC has not been restarted since the install, restart it once.\n"
+                                   "1. Restart the PC once.\n"
                                    "2. Open **Ubuntu 24.04** from the Start menu once. If it asks for a user name and password, "
                                    "type anything, then close it.\n"
                                    "3. Press the green button again.\n\n"
-                                   "Still stuck? Advanced > Check setup shows a plain report. To run the installer again "
-                                   "yourself: PowerShell (admin) > wsl --install -d Ubuntu-24.04")
+                                   "Still stuck? Advanced > Check setup shows a plain report. To run the installer yourself: "
+                                   "PowerShell (admin) > wsl --install -d Ubuntu-24.04")
+            return
+        if w != "ok" and tries >= 1 and not restarted_since_install():
+            messagebox.showinfo("Restart the computer", "The first part of the WSL setup is done, but Windows needs a restart "
+                                "before the next part.\n\nRestart the PC, open this builder, and press the green button again. "
+                                "(The builder will not ask to install again until you have restarted.)")
             return
         if w != "ok":
             what = ("Windows needs a small free add-on called WSL, which lets this builder compile the game. "
                     "Your Windows has it set up only partly." if w == "no-distro" else
                     "Windows needs a small free add-on called WSL, which lets this builder compile the game. "
                     "It is not installed yet.")
+            if tries >= 1:
+                what = ("The PC has restarted, but Ubuntu is not installed yet. The second part of the setup downloads it "
+                        "(a few hundred MB).")
             if messagebox.askyesno("One-time setup (about 10 minutes)", what + "\n\nThis happens once, never again:\n"
                                    "  1. Click Yes, then Yes again when Windows asks for permission.\n"
                                    "  2. Wait for the install window to finish, then restart the computer.\n"
