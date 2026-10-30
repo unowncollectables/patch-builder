@@ -10,7 +10,7 @@ No game files are in this repo or in the download. Everything happens on your co
 
 **The builder installs everything by itself.** The first time you press the green button it sets up:
 - **WSL + Ubuntu 24.04** (a small Linux inside Windows, from Microsoft). Windows shows a permission box (click **Yes**) and asks
-  you to **restart once**. After the restart the builder opens again by itself. An Ubuntu window may ask you to make a
+  you to **restart once**. After the restart, open the builder yourself (it never starts by itself at boot, and the WSL install is only ever run once). An Ubuntu window may ask you to make a
   user name and password once: pick anything you will remember.
 - **Build tools inside Ubuntu**: git, make, compilers, devkitPro (3DS toolchain), and the Python modules ndspy, pillow, numpy.
   It may ask for permission once more. Nothing is installed in Windows itself except WSL.
@@ -90,6 +90,7 @@ If you skipped the SD card, copy the files into those folders yourself.
 | "The Platinum project is not public yet" | Not your fault. Wait for the public release, then press the button again. |
 | Red cross: "another region" / "Rev 0" / "trimmed" / "has been changed" | You need an untouched US Rev 1 dump, 128 MB. Dump your cartridge again (for example with GodMode9). |
 | "WSL cannot start" / "virtualization is not enabled" / restart loop | Windows cannot run WSL2. The builder explains this and offers **Turn on** for the two Windows settings it needs (Virtual Machine Platform and the hypervisor); then restart once. Common on PCs set up for VirtualBox or VMware (update them afterwards if they complain). If it still fails, turn on Virtualization (Intel VT-x / AMD SVM) in the PC's BIOS/UEFI. Advanced > **Check setup** shows a plain report of this PC. |
+| Asked to install WSL again and again | Update to v1.1.5 or newer. The builder installs WSL at most once and starts nothing at boot. Advanced > **Clean up boot entries** removes anything older versions left behind. |
 | "WSL has no Linux installed" | Open PowerShell and run `wsl --install -d Ubuntu`, restart, try again. |
 | "Check that this computer is online" | Connect to the internet and press the button again. |
 | "The disk is full" | Free about 15 GB and try again. |
