@@ -741,14 +741,29 @@ def run_gui():
           "plan_w": 1, "done_w": 0, "cur": "", "t0": 0, "t_step": 0, "last": ""}
     activity = tk.StringVar(value="")
 
-    GOOD, BAD, MUTED = "#1a7f37", "#cf222e", "#57606a"
+    # Soft grey theme (easy on the eyes): grey background, light grey text.
+    BG, PANEL, FG = "#2f3237", "#3b3f45", "#e1e3e6"
+    GOOD, BAD, MUTED = "#7fd48a", "#ff8a80", "#a9aeb5"
+    GREEN, GREEN_DIM, BLUE, BLUE_DIM = "#2f8f4e", "#4d6b57", "#2f6fb5", "#4a5f78"
     big = ("Segoe UI", 11) if IS_WIN else ("TkDefaultFont", 11)
     head = ("Segoe UI", 16, "bold") if IS_WIN else ("TkDefaultFont", 16, "bold")
     style = ttk.Style()
+    try:
+        style.theme_use("clam")      # the only built-in theme that follows custom colours everywhere
+    except tk.TclError:
+        pass
+    root.configure(bg=BG)
+    style.configure(".", background=BG, foreground=FG, fieldbackground=PANEL, bordercolor="#555a61",
+                    lightcolor=PANEL, darkcolor=PANEL, troughcolor=PANEL, insertcolor=FG)
+    style.configure("TButton", background=PANEL, foreground=FG, padding=(10, 5))
+    style.map("TButton", background=[("active", "#4a4f56"), ("disabled", BG)], foreground=[("disabled", "#7d838a")])
+    style.configure("TCheckbutton", background=BG, foreground=FG)
+    style.map("TCheckbutton", background=[("active", BG)], indicatorcolor=[("selected", GREEN), ("!selected", PANEL)])
+    style.configure("TEntry", fieldbackground=PANEL, foreground=FG)
     style.configure("Step.TLabel", font=(big[0], 11, "bold"))
 
     # The whole window scrolls (mouse wheel or scrollbar), so nothing is cut off on small screens.
-    scroll_canvas = tk.Canvas(root, highlightthickness=0, borderwidth=0)
+    scroll_canvas = tk.Canvas(root, highlightthickness=0, borderwidth=0, bg=BG)
     vbar = ttk.Scrollbar(root, orient="vertical", command=scroll_canvas.yview)
     scroll_canvas.configure(yscrollcommand=vbar.set)
     vbar.pack(side="right", fill="y")
@@ -851,18 +866,18 @@ def run_gui():
     ttk.Checkbutton(outer, text="Also make the installer for the HOME Menu (.cia, install it with FBI). Adds a few minutes.",
                     variable=want_cia).pack(anchor="w", pady=(0, 6))
 
-    go = tk.Button(outer, text="Build my game and put it on the SD card", font=(big[0], 15, "bold"), bg="#2da44e", fg="white",
-                   activebackground="#2c974b", activeforeground="white", relief="flat", padx=20, pady=10,
+    go = tk.Button(outer, text="Build my game and put it on the SD card", font=(big[0], 15, "bold"), bg=GREEN, fg="white",
+                   activebackground="#3aa05c", activeforeground="white", relief="flat", padx=20, pady=10,
                    cursor="hand2", command=lambda: start("auto"))
     go.pack(fill="x", pady=(4, 2))
     ttk.Label(outer, text="Green: the normal button. Builds what you ticked and copies it to the SD card. "
               "Blue: the same, but always downloads the newest game code first.",
               foreground=MUTED, wraplength=720).pack(anchor="w", pady=(0, 6))
     upd = tk.Button(outer, text="Get the newest game updates from GitHub, then rebuild and copy",
-                    font=(big[0], 12, "bold"), bg="#0969da", fg="white", activebackground="#0860ca", activeforeground="white",
+                    font=(big[0], 12, "bold"), bg=BLUE, fg="white", activebackground="#3a7fc8", activeforeground="white",
                     relief="flat", padx=16, pady=6, cursor="hand2", command=lambda: start("update"))
     upd.pack(fill="x", pady=(0, 8))
-    newer_lbl = tk.Label(outer, text="", fg="#0969da", cursor="hand2", font=(big[0], 11, "bold", "underline"))
+    newer_lbl = tk.Label(outer, text="", fg="#7db7ff", bg=BG, cursor="hand2", font=(big[0], 11, "bold", "underline"))
 
     def check_newer():
         r = newer_release()
@@ -948,7 +963,7 @@ def run_gui():
         adv_buttons.append(b)
 
     logf = ttk.Frame(folds)
-    log = tk.Text(logf, wrap="word", height=12, bg="#111", fg="#ddd", insertbackground="#ddd",
+    log = tk.Text(logf, wrap="word", height=12, bg="#1f2124", fg="#d8dadd", insertbackground="#d8dadd",
                   font=("Consolas" if IS_WIN else "monospace", 9))
     sb = ttk.Scrollbar(logf, command=log.yview)
     log.configure(yscrollcommand=sb.set, state="disabled")
@@ -983,7 +998,7 @@ def run_gui():
                 "%s commit %s (%s): %s" % (GAMES.get(g, {}).get("name", g), h[0][:7], h[1], h[2]) for g, h in st["head"].items())
         if st.get("news"):
             text = "Game code on GitHub - " + "; ".join(st["news"]) + "\n" + text
-        banner.configure(text=text, bg="#dafbe1" if ok else "#ffebe9", fg=GOOD if ok else BAD)
+        banner.configure(text=text, bg="#27472f" if ok else "#5a2f2f", fg=GOOD if ok else BAD)
         banner.pack(fill="x", pady=(8, 0), before=folds)
         brow.pack(fill="x", pady=(4, 0), before=folds)
         if folder:
@@ -1057,8 +1072,8 @@ def run_gui():
         st["busy"] = b
         for x in adv_buttons:
             x.configure(state="disabled" if b else "normal")
-        go.configure(state="disabled" if b else "normal", bg="#94d3a2" if b else "#2da44e")
-        upd.configure(state="disabled" if b else "normal", bg="#8bb9f0" if b else "#0969da")
+        go.configure(state="disabled" if b else "normal", bg=GREEN_DIM if b else GREEN)
+        upd.configure(state="disabled" if b else "normal", bg=BLUE_DIM if b else BLUE)
         cancel_btn.configure(state="normal" if b else "disabled")
 
     def cancel():
