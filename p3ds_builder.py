@@ -10,7 +10,7 @@ Package as an .exe with build_exe.bat (PyInstaller). Standard library only.
 """
 import hashlib, json, os, re, string, subprocess, sys, threading, queue, time, urllib.request, webbrowser
 
-VERSION = "1.1.6"   # bump before tagging a release; compared with the newest GitHub release
+VERSION = "1.1.7"   # bump before tagging a release; compared with the newest GitHub release
 RELEASES_API = "https://api.github.com/repos/unowncollectables/patch-builder/releases/latest"
 RELEASES_PAGE = "https://github.com/unowncollectables/patch-builder/releases/latest"
 
@@ -993,13 +993,13 @@ def run_gui():
         if not p:
             set_check(key, None, "Required for this game." if (want_plat if key == "platinum" else want_ss).get() else "")
             return
-        if p in rom_cache:
-            set_check(key, *rom_cache[p])
+        if (p, key) in rom_cache:     # keyed by game too: the same file can be checked for the other game's box
+            set_check(key, *rom_cache[(p, key)])
             return
         set_check(key, None, "Checking the file...")
 
         def work():
-            rom_cache[p] = rom_report(p, key)
+            rom_cache[(p, key)] = rom_report(p, key)
             q.put(("recheck", key, None))
         threading.Thread(target=work, daemon=True).start()
 
@@ -1294,12 +1294,12 @@ def run_gui():
                 if not c[g]:
                     messagebox.showwarning("Game file", "Pick your Pokemon %s .nds file first." % GAMES[g]["name"])
                     return
-                ok, text = rom_cache.get(c[g]) or rom_report(c[g], g)
+                ok, text = rom_cache.get((c[g], g)) or rom_report(c[g], g)
                 if ok is False:
                     messagebox.showwarning("%s file" % GAMES[g]["name"], text)
                     return
             if c["soulsilver"] and "soulsilver" not in games:      # Platinum + a SoulSilver file = following Pokemon
-                ok, text = rom_cache.get(c["soulsilver"]) or rom_report(c["soulsilver"], "soulsilver")
+                ok, text = rom_cache.get((c["soulsilver"], "soulsilver")) or rom_report(c["soulsilver"], "soulsilver")
                 if ok is False:
                     messagebox.showwarning("SoulSilver file", text + "\n\nClear that box to build without following Pokemon.")
                     return
