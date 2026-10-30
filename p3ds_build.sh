@@ -426,6 +426,17 @@ step_deploy() {
 # ------------------------------------------------------------------------------------------------ clean
 # Removes only leftovers this builder made. NEVER touches saves, save_backups/, config, ROMs (.nds), the toolchain
 # (/opt/devkitpro), pspoke/ or the build cache. P3DS_CLEAN_DRY=1 only lists (##CLEAN:<path>) what would go.
+step_cleantree() {
+  # Deletes only the staged build tree (objects, stamps, staged sources). Downloaded
+  # sources (.cache), ROMs, saves and the SD card are never touched, so the next
+  # build re-stages and recompiles from scratch without re-downloading anything.
+  if [ -d "$ROOT/pspoke/.work" ]; then
+    rm -rf "$ROOT/pspoke/.work" && ok "build tree removed ($ROOT/pspoke/.work)"
+  else
+    ok "no build tree to remove"
+  fi
+}
+
 step_clean() {
   local list=() f sd="${P3DS_SD:-}" me
   for f in /tmp/p3ds_builder.$(id -u).pid; do [ -f "$f" ] && ! kill -0 "$(cat "$f" 2>/dev/null)" 2>/dev/null && list+=("$f"); done
@@ -450,7 +461,7 @@ step_clean() {
 run_step() {
   name="$1"
   case "$name" in
-    check|needs|setup|link|stage|pspoke|full|patches|testpatches|relink|followers|cia|deploy|clean) ;;
+    check|needs|setup|link|stage|pspoke|full|patches|testpatches|relink|followers|cia|deploy|clean|cleantree) ;;
     *) echo "unknown step: $name" >&2; return 2 ;;
   esac
   echo "##STEP:$name:START"

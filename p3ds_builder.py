@@ -54,12 +54,14 @@ PIPELINES = {
     "quick":   [(False, ["patches", "relink", "deploy"])],
     "full":    [(False, ["check", "stage", "pspoke"]), (True, ["link"]),
                 (False, ["full", "patches", "relink", "followers", "deploy"])],
+    "cleantree": [(False, ["cleantree"])],
 }
 SS_PIPELINES = {   # the same Advanced buttons for SoulSilver
     "check":   [(False, ["check"])],
     "install": [(True, ["setup"])],
     "quick":   [(False, ["link", "deploy"])],
     "full":    [(False, ["check", "stage", "build", "link", "deploy"])],
+    "cleantree": [(False, ["cleantree"])],
 }
 
 # Known failure text -> what to tell the user. First match wins; the script's own ##HINT lines win over these.
@@ -927,7 +929,8 @@ def run_gui():
     abar.pack(fill="x", pady=(6, 0))
     adv_buttons = []
     for text, pipe in (("Check setup", "check"), ("Test my patches (Platinum)", "test"), ("Quick rebuild", "quick"),
-                       ("Reinstall tools", "install"), ("Rebuild everything", "full"), ("Clean up old builds", "clean")):
+                       ("Reinstall tools", "install"), ("Rebuild everything", "full"), ("Clean build tree", "cleantree"),
+                       ("Clean up old builds", "clean")):
         b = ttk.Button(abar, text=text, command=lambda p=pipe: start(p))
         b.pack(side="left", padx=(0, 6))
         adv_buttons.append(b)
@@ -1201,7 +1204,7 @@ def run_gui():
                 q.put(("log", "  [%s] %s\n" % ("ok" if good else "MISSING", text), "good" if good else "bad"))
         games = selected_games(c)
         plans = []      # (game, needs_root, steps)
-        if pipe in ("auto", "full", "quick", "check", "install", "test"):
+        if pipe in ("auto", "full", "quick", "check", "install", "test", "cleantree"):
             if pipe == "test":
                 games = [g for g in games if g == "platinum"]
             if pipe == "install":
@@ -1369,6 +1372,8 @@ def run_gui():
         if pipe == "full" and not messagebox.askokcancel("Rebuild everything", "This rebuilds the whole game from scratch and "
                                                          "takes a long time. Continue?"):
             return
+        if pipe == "cleantree" and not messagebox.askokcancel("Clean build tree", "This deletes the build tree (pspoke/.work) for the selected game(s), so the next build starts from scratch and takes a long time. Your saves, ROMs, downloaded sources and SD card are kept. Continue?"):
+            return
         d = dict(c)
         d["legacy"] = legacy.get()
         d["offline"] = offline.get()
@@ -1404,9 +1409,10 @@ def run_gui():
             return
         prog.configure(value=100)
         status.set("Done.")
-        if pipe in ("check", "test", "install", "clean"):
+        if pipe in ("check", "test", "install", "clean", "cleantree"):
             msg = {"clean": "Clean up finished.", "check": "Setup checked. Anything marked MISSING is installed by the green button.",
                    "test": "All your patches fit. Nothing was changed.",
+                   "cleantree": "Build tree cleaned. The next build starts from scratch.",
                    "install": "Build tools installed."}[pipe]
             show_banner(True, msg)
             if pipe == "check":
