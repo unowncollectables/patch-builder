@@ -81,6 +81,39 @@ fix_line_endings() {   # a Windows git checkout turns every line ending into CRL
   ( cd "$ROOT" && printf '%s\n' "$list" | while IFS= read -r f; do [ -L "$f" ] || sed -i 's/\r$//' "$f"; done )
 }
 
+# Files under pspoke/port/ are copied into the build tree once (with @WORK@ paths filled in) and never refreshed, so a patch
+# that changes one used to need "Clean build tree". This refreshes only the ones that changed since the last build, and
+# asks for the game compile to re-run only when one of them is not already re-synced by ss3ds_game.sh itself.
+# The first run just records a baseline (it cannot know what an old tree was staged from). P3DS_NO_SYNC=1 skips all of it.
+sync_staged() {
+  local P="$ROOT/pspoke" W T man new f rel sha dest changed=0 stale=0 sub
+  W="$P/.work/tree"; T="$W/test_out"; man="$W/p3ds_port.manifest"; new="$W/p3ds_port.manifest.new"
+  [ "${P3DS_NO_SYNC:-}" = 1 ] && return 0
+  [ -d "$P/port" ] && [ -d "$T" ] || return 0
+  ( cd "$P/port" && find . -type f -print0 | sort -z | xargs -0 -r sha1sum ) > "$new" 2>/dev/null || { rm -f "$new"; return 0; }
+  if [ ! -f "$man" ]; then mv -f "$new" "$man"; say "  [--]      recorded the project files the build tree was made from (nothing refreshed this time)"; return 0; fi
+  while read -r sha f; do
+    rel="${f#./}"
+    grep -qF "$sha  $f" "$man" && continue
+    dest="$T/$rel"; [ -d "$(dirname "$dest")" ] || continue
+    if [ -f "$P/scripts/ss3ds_game.sh" ] && grep -qF "$rel" "$P/scripts/ss3ds_game.sh"; then
+      say "  [sync]    $rel (the build re-syncs this one itself)"; continue
+    fi
+    sub=$(grep -lIs -e '@WORK@' -e '@PSPDEV@' -e '@PPSSPP@' "$P/port/$rel")
+    if [ -n "$sub" ]; then
+      sed -e "s#@WORK@#$T#g" -e "s#@PSPDEV@#${PSPDEV:-$ROOT/toolchain-3ds}#g" -e "s#@PPSSPP@#PPSSPPHeadless#g" "$P/port/$rel" > "$dest"
+    else
+      cp -f "$P/port/$rel" "$dest"
+    fi
+    say "  [sync]    $rel refreshed in the build tree"; changed=$((changed+1))
+  done < "$new"
+  if [ "$changed" -gt 0 ]; then
+    rm -f "$W/.stamp-soulsilver-game"
+    say "  [sync]    $changed file(s) refreshed; the game compile will re-run once (no need for 'Clean build tree')"
+  fi
+  mv -f "$new" "$man"
+}
+
 rom_problem() {
   local code
   code=$(dd if="$1" bs=1 skip=12 count=4 2>/dev/null | tr -dc 'A-Z0-9')
@@ -167,6 +200,8 @@ step_build() {
   g=$(free_gb "$ROOT"); [ -n "$g" ] && [ "$g" -lt 4 ] && { die "only ${g} GB free"; hint "The disk is almost full (${g} GB free). Free up about 8 GB and press the button again."; return 1; }
   build_env; cd "$ROOT" || return 1
   say "Compiling SoulSilver. The first time this takes a long time (it downloads the decompilation); later builds are quick."
+  bash scripts/bootstrap.sh >/dev/null 2>&1 || true   # applies new pspoke-patches now, so sync_staged sees them
+  sync_staged
   bash scripts/ss3ds_build.sh "$ROM" || { die "scripts/ss3ds_build.sh failed - the real error is higher up in the log"; return 1; }
   ok "game compiled"
 }
