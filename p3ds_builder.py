@@ -10,7 +10,7 @@ Package as an .exe with build_exe.bat (PyInstaller). Standard library only.
 """
 import hashlib, json, os, re, string, subprocess, sys, threading, queue, time, urllib.request, webbrowser
 
-VERSION = "1.1.4"   # bump before tagging a release; compared with the newest GitHub release
+VERSION = "1.1.5"   # bump before tagging a release; compared with the newest GitHub release
 RELEASES_API = "https://api.github.com/repos/unowncollectables/patch-builder/releases/latest"
 RELEASES_PAGE = "https://github.com/unowncollectables/patch-builder/releases/latest"
 
@@ -272,7 +272,7 @@ def sudo_ok():
 
 
 def install_wsl():
-    """Windows: start 'wsl --install -d Ubuntu-24.04' elevated (UAC prompt) and re-open this builder once after the restart.
+    """Windows: start 'wsl --install -d Ubuntu-24.04' elevated (UAC prompt). Nothing is left to run at boot.
     Ubuntu 24.04 because the animated 3D HOME Menu banner needs Python 3.12. Returns (ok, error text)."""
     try:
         # -Wait -PassThru: only report success if the elevated installer really ran and finished (a declined
@@ -286,13 +286,48 @@ def install_wsl():
             return False, ("the permission box was declined or the install failed (code %d). %s" % (r.returncode, msg[:200])).strip()
     except Exception as e:
         return False, str(e)
-    if getattr(sys, "frozen", False):       # resume after the restart: HKCU RunOnce needs no admin
+    return True, ""
+
+
+def clean_boot_entries():
+    """Windows: remove anything this builder (any version) could have left to start at boot: Run/RunOnce values,
+    scheduled tasks and Startup-folder shortcuts. Returns a list of what was removed (empty = nothing found)."""
+    removed = []
+    if not IS_WIN:
+        return removed
+    for hive in (r"HKCU\Software\Microsoft\Windows\CurrentVersion\RunOnce", r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run"):
+        for name in ("Pokemon3DSBuilder", "Pokemon 3DS Builder", "P3DSBuilder"):
+            try:
+                r = subprocess.run(["reg", "delete", hive, "/v", name, "/f"], capture_output=True, creationflags=NO_WINDOW, timeout=30)
+                if r.returncode == 0:
+                    removed.append("startup entry %s\\%s" % (hive.split("\\")[-1], name))
+            except Exception:
+                pass
+    for name in ("Pokemon3DSBuilder", "Pokemon 3DS Builder", "P3DSBuilder"):
         try:
-            subprocess.run(["reg", "add", r"HKCU\Software\Microsoft\Windows\CurrentVersion\RunOnce", "/v", "Pokemon3DSBuilder",
-                            "/t", "REG_SZ", "/d", '"%s"' % sys.executable, "/f"], creationflags=NO_WINDOW, timeout=30)
+            r = subprocess.run(["schtasks", "/delete", "/tn", name, "/f"], capture_output=True, creationflags=NO_WINDOW, timeout=30)
+            if r.returncode == 0:
+                removed.append("scheduled task " + name)
         except Exception:
             pass
-    return True, ""
+    try:
+        folder = os.path.join(os.environ.get("APPDATA", ""), "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
+        for n in os.listdir(folder):
+            if "pokemon" in n.lower() and "builder" in n.lower():
+                os.remove(os.path.join(folder, n))
+                removed.append("Startup shortcut " + n)
+    except Exception:
+        pass
+    return removed
+
+
+def wsl_set_done():
+    """WSL works: remember it so the installer is never offered again."""
+    try:
+        with open(SETTINGS + ".wsl", "w") as f:
+            f.write("done")
+    except Exception:
+        pass
 
 
 VIRT_RE = r"virtualization|virtual machine platform|0x80370102|0x80370114|hcs_e_|hyper-v|hypervisor"
@@ -311,7 +346,8 @@ def wsl_tries():
     """How many times this builder already ran the WSL installer (kept in a small file beside the settings)."""
     try:
         with open(SETTINGS + ".wsl") as f:
-            return int(f.read().strip() or 0)
+            t = f.read().strip()
+            return 99 if t == "done" else int(t or 0)
     except Exception:
         return 0
 
@@ -854,6 +890,13 @@ def run_gui():
     field(adv, "repo", "Platinum project folder (3ds-platinum)", "dir")
     field(adv, "ssrepo", "SoulSilver project folder (Pokemon-Soulsilver-New3ds)", "dir")
     ttk.Checkbutton(adv, text="Also apply the older Platinum patches/*.patch", variable=legacy).pack(anchor="w")
+
+    def do_clean_boot():
+        gone = clean_boot_entries()
+        messagebox.showinfo("Boot entries", ("Removed:\n  " + "\n  ".join(gone)) if gone else
+                            "Nothing to remove: this builder has nothing set to start at boot.")
+    if IS_WIN:
+        ttk.Button(adv, text="Clean up boot entries (stops it from starting at boot)", command=do_clean_boot).pack(anchor="w", pady=(6, 0))
     ttk.Checkbutton(adv, text="Offline: do not check GitHub for game updates on 'Build and install' (the Update button still does)",
                     variable=offline).pack(anchor="w")
     abar = ttk.Frame(adv)
@@ -1252,6 +1295,20 @@ def run_gui():
         if w == "no-virt":
             wsl_virt_help()
             return
+        if w == "ok":
+            wsl_set_done()
+        if w != "ok" and wsl_tries() >= 1:
+            # The installer already ran once: do NOT run it (or ask for a restart) again. Show what is really wrong.
+            messagebox.showwarning("WSL is not ready", "The WSL installer already ran on this PC, so the builder will not "
+                                   "install it again.\n\nWindows says:\n" + (wsl_probe_text()[:300] or "(nothing)") +
+                                   "\n\nTry, in this order:\n"
+                                   "1. If the PC has not been restarted since the install, restart it once.\n"
+                                   "2. Open **Ubuntu 24.04** from the Start menu once. If it asks for a user name and password, "
+                                   "type anything, then close it.\n"
+                                   "3. Press the green button again.\n\n"
+                                   "Still stuck? Advanced > Check setup shows a plain report. To run the installer again "
+                                   "yourself: PowerShell (admin) > wsl --install -d Ubuntu-24.04")
+            return
         if w != "ok":
             what = ("Windows needs a small free add-on called WSL, which lets this builder compile the game. "
                     "Your Windows has it set up only partly." if w == "no-distro" else
@@ -1260,9 +1317,9 @@ def run_gui():
             if messagebox.askyesno("One-time setup (about 10 minutes)", what + "\n\nThis happens once, never again:\n"
                                    "  1. Click Yes, then Yes again when Windows asks for permission.\n"
                                    "  2. Wait for the install window to finish, then restart the computer.\n"
-                                   "  3. This builder opens by itself. If a black window asks for a user name and "
+                                   "  3. Open this builder again yourself. If a black window asks for a user name and "
                                    "password, type anything you will remember.\n"
-                                   "  4. Press the green button again. That is all.\n\nInstall it now?"):
+                                   "  4. Press the green button again. That is all. It is never asked again.\n\nInstall it now?"):
                 status.set("Installing WSL + Ubuntu. Windows may show a black window for a few minutes. Please wait...")
                 activity.set("Do not close this window. When the install finishes, a message here tells you to restart.")
                 st["t0"] = 0
@@ -1385,7 +1442,7 @@ def run_gui():
                     elif a:
                         status.set("Restart the computer now.")
                         messagebox.showinfo("One-time setup", "The installer finished. Now restart the computer.\n\n"
-                                            "This builder opens again by itself; press the green button to carry on.")
+                                            "Then open this builder yourself and press the green button. Nothing starts by itself at boot.")
                     else:
                         status.set("")
                         messagebox.showerror("One-time setup", "The installer did not finish: %s\n\nYou can do it by hand: open "
@@ -1433,6 +1490,8 @@ def run_gui():
         root.destroy()
     root.protocol("WM_DELETE_WINDOW", on_close)
 
+    if IS_WIN:      # older versions registered a resume-at-boot entry: remove any leftovers, silently
+        threading.Thread(target=clean_boot_entries, daemon=True).start()
     refresh()
     pump()
     tick()
