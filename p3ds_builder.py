@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Pokemon 3DS Builder - a one-button window around p3ds_build.sh (Platinum) and ss_build.sh (SoulSilver).
 
-Tick Platinum and/or SoulSilver, pick the game file(s) you own and your SD card, press "Build and install". The window
+Tick Platinum and/or SoulSilver, pick the game file(s) you own and your SD card, press "Build my game and put it on the SD card". The window
 downloads the project(s) if needed, works out which steps are still needed (tools, pspoke, full build), builds the
 game(s) and copies them to the card (optionally also a HOME Menu .cia). Everything else lives under "Advanced".
 
@@ -851,11 +851,14 @@ def run_gui():
     ttk.Checkbutton(outer, text="Also make the installer for the HOME Menu (.cia, install it with FBI). Adds a few minutes.",
                     variable=want_cia).pack(anchor="w", pady=(0, 6))
 
-    go = tk.Button(outer, text="Build and install", font=(big[0], 15, "bold"), bg="#2da44e", fg="white",
+    go = tk.Button(outer, text="Build my game and put it on the SD card", font=(big[0], 15, "bold"), bg="#2da44e", fg="white",
                    activebackground="#2c974b", activeforeground="white", relief="flat", padx=20, pady=10,
                    cursor="hand2", command=lambda: start("auto"))
-    go.pack(fill="x", pady=(4, 4))
-    upd = tk.Button(outer, text="Update: download the newest game code from GitHub, rebuild, then copy",
+    go.pack(fill="x", pady=(4, 2))
+    ttk.Label(outer, text="Green: the normal button. Builds what you ticked and copies it to the SD card. "
+              "Blue: the same, but always downloads the newest game code first.",
+              foreground=MUTED, wraplength=720).pack(anchor="w", pady=(0, 6))
+    upd = tk.Button(outer, text="Get the newest game updates from GitHub, then rebuild and copy",
                     font=(big[0], 12, "bold"), bg="#0969da", fg="white", activebackground="#0860ca", activeforeground="white",
                     relief="flat", padx=16, pady=6, cursor="hand2", command=lambda: start("update"))
     upd.pack(fill="x", pady=(0, 8))
@@ -923,16 +926,25 @@ def run_gui():
                             "Nothing to remove: this builder has nothing set to start at boot.")
     if IS_WIN:
         ttk.Button(adv, text="Clean up boot entries (stops it from starting at boot)", command=do_clean_boot).pack(anchor="w", pady=(6, 0))
-    ttk.Checkbutton(adv, text="Offline: do not check GitHub for game updates on 'Build and install' (the Update button still does)",
+    ttk.Checkbutton(adv, text="Offline: do not check GitHub for game updates on the green button (the blue button still does)",
                     variable=offline).pack(anchor="w")
+    ttk.Label(adv, text="Maintenance tools. You normally never need these: the green button does everything. "
+              "Each one is explained next to its button.", foreground=MUTED, wraplength=720).pack(anchor="w", pady=(10, 4))
     abar = ttk.Frame(adv)
-    abar.pack(fill="x", pady=(6, 0))
+    abar.pack(fill="x")
+    abar.columnconfigure(1, weight=1)
     adv_buttons = []
-    for text, pipe in (("Check setup", "check"), ("Test my patches (Platinum)", "test"), ("Quick rebuild", "quick"),
-                       ("Reinstall tools", "install"), ("Rebuild everything", "full"), ("Clean build tree", "cleantree"),
-                       ("Clean up old builds", "clean")):
+    for i, (text, pipe, why) in enumerate((
+            ("Check my setup", "check", "Only looks, changes nothing. Shows what is installed and what is missing. Use it first if something fails."),
+            ("Test my patches (Platinum)", "test", "Checks that your Platinum patches still fit the game code. Nothing is built or changed."),
+            ("Quick rebuild", "quick", "Re-applies patches and rebuilds only what changed, then copies it. Fast. Use after a small change."),
+            ("Reinstall build tools", "install", "Downloads and installs the compilers again. Use if the check says a tool is broken or missing."),
+            ("Rebuild everything (slow)", "full", "Rebuilds the whole game from scratch. Takes a long time. Use if a normal build gives odd results."),
+            ("Delete build files (slow next time)", "cleantree", "Deletes the temporary build folder, so the next build starts from zero. Your saves, game files and SD card are kept."),
+            ("Delete old builds", "clean", "Removes old finished builds to free disk space. You are asked before anything is deleted."))):
         b = ttk.Button(abar, text=text, command=lambda p=pipe: start(p))
-        b.pack(side="left", padx=(0, 6))
+        b.grid(row=i, column=0, sticky="ew", pady=2)
+        ttk.Label(abar, text=why, foreground=MUTED, wraplength=470, justify="left").grid(row=i, column=1, sticky="w", padx=(10, 0))
         adv_buttons.append(b)
 
     logf = ttk.Frame(folds)
