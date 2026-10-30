@@ -43,12 +43,40 @@ as_root() { if [ "$(id -u)" -eq 0 ]; then "$@"; elif sudo -n true 2>/dev/null; t
 build_env() {
   export DEVKITPRO=$DKP DEVKITARM=$DKP/devkitARM
   export PATH="$ROOT/toolchain-3ds/bin:$DKP/devkitARM/bin:$DKP/tools/bin:$PATH"
+  # Parallel compiles: one job per CPU, but at most one per GB of free RAM (WSL gets about half the PC's memory) and 12.
+  # P3DS_JOBS=1 turns it off if a build ever fails only when parallel.
+  if [ -z "${MAKEFLAGS:-}" ]; then
+    local j="${P3DS_JOBS:-}" m
+    if [ -z "$j" ]; then
+      j=$(nproc 2>/dev/null || echo 2)
+      m=$(awk '/MemAvailable/ {printf "%d", $2/1048576}' /proc/meminfo 2>/dev/null)
+      [ -n "$m" ] && [ "$m" -ge 1 ] && [ "$m" -lt "$j" ] && j=$m
+      [ "$j" -gt 12 ] && j=12
+    fi
+    [ "$j" -ge 1 ] 2>/dev/null || j=1
+    export MAKEFLAGS="-j$j"
+  fi
+}
+
+rom_sha1() {   # SHA1 of the ROM, remembered by size+mtime so check/stage do not each re-read 128 MB (slow on /mnt/c)
+  local f="$1" key c="$ROOT/build/.rom_sha1"
+  key="$(stat -c '%s %Y' "$f" 2>/dev/null)|$f"
+  if [ -f "$c" ] && [ "$(sed -n 1p "$c")" = "$key" ]; then sed -n 2p "$c"; return; fi
+  local s; s=$(sha1sum "$f" | cut -d' ' -f1)
+  mkdir -p "$ROOT/build" 2>/dev/null && printf '%s\n%s\n' "$key" "$s" > "$c" 2>/dev/null
+  printf '%s\n' "$s"
 }
 
 fix_line_endings() {   # a Windows git checkout turns every line ending into CRLF, which breaks bash scripts and patches
-  local list
+  local list head stamp="$ROOT/build/.eol_checked"
+  # Reading every tracked file takes a while on /mnt/c, so it is skipped when the checkout has not moved since the last clean scan.
+  head=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null)
+  if [ -n "$head" ] && [ "$(cat "$stamp" 2>/dev/null)" = "$head" ] && [ -z "$(git -C "$ROOT" status --porcelain --untracked-files=no 2>/dev/null | head -1)" ]; then return 0; fi
   list=$(cd "$ROOT" && git ls-files -z 2>/dev/null | xargs -0 -r grep -lIZ $'\r' 2>/dev/null | tr '\0' '\n')
-  [ -n "$list" ] || return 0
+  if [ -z "$list" ]; then
+    [ -n "$head" ] && mkdir -p "$ROOT/build" 2>/dev/null && printf '%s\n' "$head" > "$stamp" 2>/dev/null
+    return 0
+  fi
   say "Fixing Windows line endings in $(printf '%s\n' "$list" | wc -l) project file(s)..."
   ( cd "$ROOT" && printf '%s\n' "$list" | while IFS= read -r f; do [ -L "$f" ] || sed -i 's/\r$//' "$f"; done )
 }
@@ -78,7 +106,7 @@ step_check() {
   [ -x "$DKP/tools/bin/3dsxtool" ] && ok 3dstools || miss "3dstools (3dsxtool)"
   [ -x "$DKP/tools/bin/picasso" ] && ok picasso || miss picasso
   if [ -n "$ROM" ] && [ -f "$ROM" ]; then
-    s=$(sha1sum "$ROM" | cut -d' ' -f1)
+    s=$(rom_sha1 "$ROM")
     [ "$s" = "$WANT_SHA1" ] && ok "SoulSilver ROM (SHA1 matches the tested dump)" || say "  [!]       ROM SHA1 $s is not the tested dump ($WANT_SHA1); the build may fail"
   else miss "SoulSilver ROM not selected"; fi
   [ -d "$ROOT/pspoke/.git" ] && ok "pspoke prepared" || say "  [--]      pspoke not downloaded yet (first build does it)"
@@ -126,7 +154,7 @@ step_stage() {
   [ -n "$ROM" ] && [ -f "$ROM" ] || { die "no SoulSilver ROM selected"; hint "Pick your Pokemon SoulSilver .nds file in the SoulSilver box."; return 1; }
   why=$(rom_problem "$ROM")
   [ -z "$why" ] || { die "$why"; hint "$why"; return 1; }
-  s=$(sha1sum "$ROM" | cut -d' ' -f1)
+  s=$(rom_sha1 "$ROM")
   if [ "$s" = "$WANT_SHA1" ]; then ok "SoulSilver ROM verified (US, SHA1 matches)"
   else say "  [!]       This SoulSilver dump differs from the one the port is tested with (SHA1 $s). Continuing; if a data step fails, use a clean dump of your cartridge."; fi
 }
