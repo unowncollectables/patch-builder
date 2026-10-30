@@ -738,7 +738,7 @@ def run_gui():
     q = queue.Queue()
     st = {"proc": None, "busy": False, "cancel": False, "hint": "", "failed": "", "installed": [], "project": {},
           "planned": 0, "done_steps": 0, "cia": False,
-          "plan_w": 1, "done_w": 0, "cur": "", "t0": 0, "t_step": 0, "last": ""}
+          "plan_w": 1, "step_name": "", "done_w": 0, "cur": "", "t0": 0, "t_step": 0, "last": ""}
     activity = tk.StringVar(value="")
 
     # Soft grey theme (easy on the eyes): grey background, light grey text.
@@ -804,6 +804,8 @@ def run_gui():
     def apply_theme():
         k = "both" if want_plat.get() and want_ss.get() else "soulsilver" if want_ss.get() else "platinum" if want_plat.get() else "none"
         a, b, name = THEMES[k]
+        if not st["busy"]:
+            bar_color(b)
         stripe.configure(bg=a)
         stripe_r.configure(bg=b)
         hdr_title.configure(fg=b if k != "both" else a)
@@ -911,8 +913,32 @@ def run_gui():
             q.put(("newer", r[0], r[1]))
     threading.Thread(target=check_newer, daemon=True).start()
 
-    prog = ttk.Progressbar(outer, mode="determinate", maximum=100)
+    style.configure("Game.Horizontal.TProgressbar", thickness=22, background="#8a8f96", troughcolor=PANEL, bordercolor=PANEL,
+                    lightcolor="#8a8f96", darkcolor="#8a8f96")
+    pct_var = tk.StringVar(value="")
+    ttk.Label(outer, textvariable=pct_var, style="Step.TLabel").pack(anchor="w")
+    prog = ttk.Progressbar(outer, mode="determinate", maximum=100, style="Game.Horizontal.TProgressbar")
     prog.pack(fill="x")
+    anim = {"target": 0.0, "shown": 0.0, "spin": 0}
+
+    def bar_color(col):
+        style.configure("Game.Horizontal.TProgressbar", background=col, lightcolor=col, darkcolor=col)
+
+    def set_target(v, jump=False):
+        anim["target"] = float(v)
+        if jump:
+            anim["shown"] = float(v)
+
+    def animate():
+        """Glide the bar toward its target so it moves smoothly instead of jumping; show percent and a spinner."""
+        d = anim["target"] - anim["shown"]
+        anim["shown"] = anim["target"] if abs(d) < 0.15 else anim["shown"] + d * 0.12
+        prog.configure(value=anim["shown"])
+        if st["busy"]:
+            anim["spin"] += 1
+            sp = "|/-\\"[(anim["spin"] // 3) % 4]
+            pct_var.set("%s  %d%%   %s" % (sp, int(anim["shown"]), st["step_name"]))
+        root.after(60, animate)
     ttk.Label(outer, textvariable=activity, foreground=MUTED, wraplength=720).pack(anchor="w", pady=(2, 0))
     srow = ttk.Frame(outer)
     srow.pack(fill="x", pady=(4, 0))
@@ -1437,7 +1463,9 @@ def run_gui():
         log.configure(state="normal")
         log.delete("1.0", "end")
         log.configure(state="disabled")
-        prog.configure(value=0)
+        set_target(0, True)
+        bar_color(THEMES["both" if want_plat.get() and want_ss.get() else "soulsilver" if want_ss.get() else "platinum" if want_plat.get() else "none"][1])
+        pct_var.set("")
         st["t0"], st["last"], st["cur"] = time.time(), "", ""
         set_busy(True)
         status.set("Starting...")
@@ -1454,14 +1482,20 @@ def run_gui():
         c = current_cfg()
         if st["cancel"]:
             status.set("Cancelled.")
+            bar_color("#8a8f96")
+            pct_var.set("Cancelled at %d%%. Press the button to carry on." % int(anim["shown"]))
             show_banner(False, "Cancelled. Press the button again to carry on where it stopped.")
             return
         if not ok:
             status.set("Stopped.")
+            bar_color("#d9534f")
+            pct_var.set("Stopped at %d%%. Read the red box below; 'Copy details for help' sends it to me." % int(anim["shown"]))
             show_banner(False, explain(text, st["hint"], st["failed"]))
             toggle("details", True)
             return
-        prog.configure(value=100)
+        set_target(100)
+        bar_color("#4caf6a")
+        pct_var.set("Done!  100%")
         status.set("Done.")
         if pipe in ("check", "test", "install", "clean", "cleantree"):
             msg = {"clean": "Clean up finished.", "check": "Setup checked. Anything marked MISSING is installed by the green button.",
@@ -1499,7 +1533,7 @@ def run_gui():
             frac = 0.0
             if cur and cur not in ("needs", "get"):
                 frac = min(0.9, (time.time() - st["t_step"]) / STEP_SECS.get(cur, 60)) * STEP_WEIGHT.get(cur, 2)
-                prog.configure(value=100.0 * min(st["done_w"] + frac, st["plan_w"]) / max(st["plan_w"], 1))
+                set_target(100.0 * min(st["done_w"] + frac, st["plan_w"]) / max(st["plan_w"], 1))
             last = st["last"][:90]
             activity.set("Working for %d:%02d. Still going, safe to leave it.%s" %
                          (el // 60, el % 60, ("  Latest: " + last) if last else ""))
@@ -1513,6 +1547,7 @@ def run_gui():
                     emit(a, b)
                 elif kind == "step":
                     st["cur"], st["t_step"] = a, time.time()
+                    st["step_name"] = FRIENDLY.get(a, "")
                     n = max(st["planned"], 1)
                     if a not in ("needs", "get"):
                         status.set("Step %d of %d: %s..." % (min(st["done_steps"] + 1, n), n, FRIENDLY.get(a, a)))
@@ -1523,7 +1558,7 @@ def run_gui():
                         st["done_steps"] += 1
                         st["done_w"] += STEP_WEIGHT.get(a, 2)
                     st["cur"] = ""
-                    prog.configure(value=100.0 * min(st["done_w"], st["plan_w"]) / max(st["plan_w"], 1))
+                    set_target(100.0 * min(st["done_w"], st["plan_w"]) / max(st["plan_w"], 1))
                 elif kind == "wsldone":
                     set_busy(False)
                     activity.set("")
@@ -1589,6 +1624,7 @@ def run_gui():
     refresh()
     pump()
     tick()
+    animate()
     root.mainloop()
 
 
