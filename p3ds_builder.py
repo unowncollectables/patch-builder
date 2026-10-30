@@ -787,8 +787,28 @@ def run_gui():
     root.bind_all("<MouseWheel>", on_wheel)
     root.bind_all("<Button-4>", on_wheel)
     root.bind_all("<Button-5>", on_wheel)
-    ttk.Label(outer, text="Pokemon 3DS Builder", font=head).pack(anchor="w")
-    ttk.Label(outer, text="Tick the game(s), pick the game file(s) you own and your SD card, then press the green button. "
+    # Header: colours follow the ticked game (SoulSilver = gold + silver, Platinum = steel + red).
+    THEMES = {"soulsilver": ("#c9ccd3", "#d9a93a", "Pokemon SoulSilver"), "platinum": ("#8d9bb5", "#c0463c", "Pokemon Platinum"),
+              "both": ("#c9ccd3", "#8d9bb5", "Pokemon SoulSilver + Platinum"), "none": ("#8a8f96", "#8a8f96", "Pokemon 3DS Builder")}
+    hdr = tk.Frame(outer, bg=BG)
+    hdr.pack(fill="x", pady=(0, 10))
+    stripe = tk.Frame(hdr, height=6, bg="#8a8f96")
+    stripe.pack(fill="x")
+    stripe_r = tk.Frame(stripe, height=6, bg="#8a8f96")
+    stripe_r.place(relx=0.5, rely=0, relwidth=0.5, relheight=1)
+    hdr_title = tk.Label(hdr, text="Pokemon 3DS Builder", font=head, bg=BG, fg=FG, anchor="w")
+    hdr_title.pack(fill="x", pady=(8, 0))
+    hdr_sub = tk.Label(hdr, text="Play Pokemon on your 3DS", font=big, bg=BG, fg=MUTED, anchor="w")
+    hdr_sub.pack(fill="x")
+
+    def apply_theme():
+        k = "both" if want_plat.get() and want_ss.get() else "soulsilver" if want_ss.get() else "platinum" if want_plat.get() else "none"
+        a, b, name = THEMES[k]
+        stripe.configure(bg=a)
+        stripe_r.configure(bg=b)
+        hdr_title.configure(fg=b if k != "both" else a)
+        hdr_sub.configure(text="Building: " + name if k != "none" else "Tick a game below to start")
+    ttk.Label(outer, text="Just a few steps: tick a game, point to your game file, pick your SD card, press the green button. "
                           "Your game files never leave this computer.",
               foreground=MUTED, wraplength=720).pack(anchor="w", pady=(0, 10))
 
@@ -851,7 +871,11 @@ def run_gui():
                     variable=autofind, command=do_autofind).pack(anchor="w", pady=(0, 6))
     follow_note = ttk.Label(games_area, text="", foreground=MUTED, wraplength=720)
     field(outer, "out", "3.  Where to save the finished game on this PC (the .cia and .3dsx always go here)", "dir")
+    ttk.Label(outer, text="Tip: the finished files always land here too, so if the SD step fails you can copy them by hand.",
+              foreground=MUTED, wraplength=720).pack(anchor="w", pady=(0, 8))
     sd_row = field(outer, "sd", "4.  Your 3DS SD card (optional, plugged into this computer)", "dir")
+    ttk.Label(outer, text="Tip: switch the 3DS off, take the card out, plug it into this PC, press \"Find it\". "
+              "No card yet? Leave this empty and copy the files later.", foreground=MUTED, wraplength=720).pack(anchor="w", pady=(0, 8))
 
     def find_sd():
         cards = find_sd_cards()
@@ -866,6 +890,8 @@ def run_gui():
     ttk.Checkbutton(outer, text="Also make the installer for the HOME Menu (.cia, install it with FBI). Adds a few minutes.",
                     variable=want_cia).pack(anchor="w", pady=(0, 6))
 
+    ttk.Label(outer, text="5.  Press the green button and wait. The first build takes a while (up to an hour); "
+              "later ones are much faster. You can leave it running.", style="Step.TLabel", wraplength=720).pack(anchor="w", pady=(4, 0))
     go = tk.Button(outer, text="Build my game and put it on the SD card", font=(big[0], 15, "bold"), bg=GREEN, fg="white",
                    activebackground="#3aa05c", activeforeground="white", relief="flat", padx=20, pady=10,
                    cursor="hand2", command=lambda: start("auto"))
@@ -1036,6 +1062,7 @@ def run_gui():
     def refresh(*_):
         # a game's boxes only show while its tick is on (the Platinum box also takes SoulSilver's ROM for following Pokemon)
         follow_note.pack_forget()
+        apply_theme()
         for key, var in (("platinum", want_plat), ("soulsilver", want_ss)):
             # the SoulSilver box also shows for Platinum alone: that file is what adds following Pokemon
             if var.get() or (key == "soulsilver" and want_plat.get()):
