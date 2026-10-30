@@ -41,7 +41,7 @@ No game files are in this repo or in the download. Everything happens on your co
 4. **Output folder** (box 3): the finished `.cia` and `.3dsx` are always saved here, in `Platinum\` and `SoulSilver\`,
    with a `How to put this on your 3DS.txt`. Default: `Documents\Pokemon 3DS Builds`. **Open game folder** opens it.
 5. Put your 3DS SD card in the computer and press **Find it**. (You can skip this; then the files are just saved on the PC.)
-6. Press the big green **Build and install**. Before it starts, it warns you about low disk space or no internet. If WSL/Ubuntu is missing
+6. Press the big green **Build my game and put it on the SD card**. Before it starts, it warns you about low disk space or no internet. If WSL/Ubuntu is missing
    (or only half installed), a **One-time setup** box lists the steps: click Yes, restart when asked, the builder reopens, press the button again.
 7. Wait. **The first build takes an hour or more.** Later builds are quick. The bar shows overall progress, and a line under it shows how long
    it has been running and the latest output, so you can tell it is still working. The log says what is still needed and what is already installed,
@@ -52,13 +52,13 @@ No game files are in this repo or in the download. Everything happens on your co
 ### Updating (you already have it installed)
 
 - Press the blue **Update** button. It does **not** update the builder itself: it downloads the newest **game code** (the Platinum/SoulSilver projects) from GitHub, shows what's new
-  (or "Already up to date"), rebuilds and copies to the SD card the same way as **Build and install**.
+  (or "Already up to date"), rebuilds and copies to the SD card the same way as **Build my game and put it on the SD card**.
   Your game files, the build cache and your save are never touched; the save is backed up before every copy.
 - Every build makes sure each project points at the right GitHub repo and branch (main), fixing it if needed (your game
   files and saves are never touched). Right before copying it checks GitHub again; if new code was pushed during the build it
   updates and does a quick rebuild (up to 2 times). The done message and `How to put this on your 3DS.txt` show the
   exact version built (commit and date).
-- **Build and install** also checks GitHub for game updates each time. To stop that, tick **Advanced > Offline**.
+- **Build my game and put it on the SD card** also checks GitHub for game updates each time. To stop that, tick **Advanced > Offline**.
 - If the window says **"A newer builder is available"**, click it and download the new `Pokemon3DSBuilder.exe`.
 - Your own edits to a project folder are kept with `git stash` before an update (power users: `git stash list`).
 
@@ -86,7 +86,7 @@ If you skipped the SD card, copy the files into those folders yourself.
 |---|---|
 | "cannot see SD card F:" (v1.0.7 and older) | Use v1.0.8 or newer: it copies to the SD card from Windows itself. |
 | "Windows protected your PC" (blue SmartScreen box) | Normal for a new download. Press **More info**, then **Run anyway**. |
-| "No module named 'ndspy'" or "built without following Pokemon" | Advanced > **Reinstall tools**, then press **Build and install** again. Platinum still installs without following Pokemon either way. |
+| "No module named 'ndspy'" or "built without following Pokemon" | Advanced > **Reinstall build tools**, then press **Build my game and put it on the SD card** again. Platinum still installs without following Pokemon either way. |
 | "The Platinum project is not public yet" | Not your fault. Wait for the public release, then press the button again. |
 | Red cross: "another region" / "Rev 0" / "trimmed" / "has been changed" | You need an untouched US Rev 1 dump, 128 MB. Dump your cartridge again (for example with GodMode9). |
 | "WSL cannot start" / "virtualization is not enabled" / restart loop | Windows cannot run WSL2. The builder explains this and offers **Turn on** for the two Windows settings it needs (Virtual Machine Platform and the hypervisor); then restart once. Common on PCs set up for VirtualBox or VMware (update them afterwards if they complain). If it still fails, turn on Virtualization (Intel VT-x / AMD SVM) in the PC's BIOS/UEFI. Advanced > **Check setup** shows a plain report of this PC. |
@@ -125,7 +125,7 @@ Needs root once for `setup` (apt + devkitPro); the GUI does that for you (WSL ru
 ## Advanced (in the window)
 
 Project folders (leave empty and they are downloaded into your Linux/WSL home, and fast-forwarded to the latest version on each
-build if you have no local edits), Check setup, Test my patches (Platinum), Quick rebuild, Reinstall tools, Rebuild everything.
+build if you have no local edits), Check my setup, Test my patches (Platinum), Quick rebuild, Reinstall tools, Rebuild everything, Delete build files, Delete old builds.
 
 ## Your patches
 

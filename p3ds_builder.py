@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Pokemon 3DS Builder - a one-button window around p3ds_build.sh (Platinum) and ss_build.sh (SoulSilver).
 
-Tick Platinum and/or SoulSilver, pick the game file(s) you own and your SD card, press "Build and install". The window
+Tick Platinum and/or SoulSilver, pick the game file(s) you own and your SD card, press "Build my game and put it on the SD card". The window
 downloads the project(s) if needed, works out which steps are still needed (tools, pspoke, full build), builds the
 game(s) and copies them to the card (optionally also a HOME Menu .cia). Everything else lives under "Advanced".
 
@@ -738,17 +738,32 @@ def run_gui():
     q = queue.Queue()
     st = {"proc": None, "busy": False, "cancel": False, "hint": "", "failed": "", "installed": [], "project": {},
           "planned": 0, "done_steps": 0, "cia": False,
-          "plan_w": 1, "done_w": 0, "cur": "", "t0": 0, "t_step": 0, "last": ""}
+          "plan_w": 1, "step_name": "", "done_w": 0, "cur": "", "t0": 0, "t_step": 0, "last": ""}
     activity = tk.StringVar(value="")
 
-    GOOD, BAD, MUTED = "#1a7f37", "#cf222e", "#57606a"
+    # Soft grey theme (easy on the eyes): grey background, light grey text.
+    BG, PANEL, FG = "#2f3237", "#3b3f45", "#e1e3e6"
+    GOOD, BAD, MUTED = "#7fd48a", "#ff8a80", "#a9aeb5"
+    GREEN, GREEN_DIM, BLUE, BLUE_DIM = "#2f8f4e", "#4d6b57", "#2f6fb5", "#4a5f78"
     big = ("Segoe UI", 11) if IS_WIN else ("TkDefaultFont", 11)
     head = ("Segoe UI", 16, "bold") if IS_WIN else ("TkDefaultFont", 16, "bold")
     style = ttk.Style()
+    try:
+        style.theme_use("clam")      # the only built-in theme that follows custom colours everywhere
+    except tk.TclError:
+        pass
+    root.configure(bg=BG)
+    style.configure(".", background=BG, foreground=FG, fieldbackground=PANEL, bordercolor="#555a61",
+                    lightcolor=PANEL, darkcolor=PANEL, troughcolor=PANEL, insertcolor=FG)
+    style.configure("TButton", background=PANEL, foreground=FG, padding=(10, 5))
+    style.map("TButton", background=[("active", "#4a4f56"), ("disabled", BG)], foreground=[("disabled", "#7d838a")])
+    style.configure("TCheckbutton", background=BG, foreground=FG)
+    style.map("TCheckbutton", background=[("active", BG)], indicatorcolor=[("selected", GREEN), ("!selected", PANEL)])
+    style.configure("TEntry", fieldbackground=PANEL, foreground=FG)
     style.configure("Step.TLabel", font=(big[0], 11, "bold"))
 
     # The whole window scrolls (mouse wheel or scrollbar), so nothing is cut off on small screens.
-    scroll_canvas = tk.Canvas(root, highlightthickness=0, borderwidth=0)
+    scroll_canvas = tk.Canvas(root, highlightthickness=0, borderwidth=0, bg=BG)
     vbar = ttk.Scrollbar(root, orient="vertical", command=scroll_canvas.yview)
     scroll_canvas.configure(yscrollcommand=vbar.set)
     vbar.pack(side="right", fill="y")
@@ -772,8 +787,30 @@ def run_gui():
     root.bind_all("<MouseWheel>", on_wheel)
     root.bind_all("<Button-4>", on_wheel)
     root.bind_all("<Button-5>", on_wheel)
-    ttk.Label(outer, text="Pokemon 3DS Builder", font=head).pack(anchor="w")
-    ttk.Label(outer, text="Tick the game(s), pick the game file(s) you own and your SD card, then press the green button. "
+    # Header: colours follow the ticked game (SoulSilver = gold + silver, Platinum = steel + red).
+    THEMES = {"soulsilver": ("#c9ccd3", "#d9a93a", "Pokemon SoulSilver"), "platinum": ("#8d9bb5", "#c0463c", "Pokemon Platinum"),
+              "both": ("#c9ccd3", "#8d9bb5", "Pokemon SoulSilver + Platinum"), "none": ("#8a8f96", "#8a8f96", "Pokemon 3DS Builder")}
+    hdr = tk.Frame(outer, bg=BG)
+    hdr.pack(fill="x", pady=(0, 10))
+    stripe = tk.Frame(hdr, height=6, bg="#8a8f96")
+    stripe.pack(fill="x")
+    stripe_r = tk.Frame(stripe, height=6, bg="#8a8f96")
+    stripe_r.place(relx=0.5, rely=0, relwidth=0.5, relheight=1)
+    hdr_title = tk.Label(hdr, text="Pokemon 3DS Builder", font=head, bg=BG, fg=FG, anchor="w")
+    hdr_title.pack(fill="x", pady=(8, 0))
+    hdr_sub = tk.Label(hdr, text="Play Pokemon on your 3DS", font=big, bg=BG, fg=MUTED, anchor="w")
+    hdr_sub.pack(fill="x")
+
+    def apply_theme():
+        k = "both" if want_plat.get() and want_ss.get() else "soulsilver" if want_ss.get() else "platinum" if want_plat.get() else "none"
+        a, b, name = THEMES[k]
+        if not st["busy"]:
+            bar_color(b)
+        stripe.configure(bg=a)
+        stripe_r.configure(bg=b)
+        hdr_title.configure(fg=b if k != "both" else a)
+        hdr_sub.configure(text="Building: " + name if k != "none" else "Tick a game below to start")
+    ttk.Label(outer, text="Just a few steps: tick a game, point to your game file, pick your SD card, press the green button. "
                           "Your game files never leave this computer.",
               foreground=MUTED, wraplength=720).pack(anchor="w", pady=(0, 10))
 
@@ -836,7 +873,11 @@ def run_gui():
                     variable=autofind, command=do_autofind).pack(anchor="w", pady=(0, 6))
     follow_note = ttk.Label(games_area, text="", foreground=MUTED, wraplength=720)
     field(outer, "out", "3.  Where to save the finished game on this PC (the .cia and .3dsx always go here)", "dir")
+    ttk.Label(outer, text="Tip: the finished files always land here too, so if the SD step fails you can copy them by hand.",
+              foreground=MUTED, wraplength=720).pack(anchor="w", pady=(0, 8))
     sd_row = field(outer, "sd", "4.  Your 3DS SD card (optional, plugged into this computer)", "dir")
+    ttk.Label(outer, text="Tip: switch the 3DS off, take the card out, plug it into this PC, press \"Find it\". "
+              "No card yet? Leave this empty and copy the files later.", foreground=MUTED, wraplength=720).pack(anchor="w", pady=(0, 8))
 
     def find_sd():
         cards = find_sd_cards()
@@ -851,15 +892,20 @@ def run_gui():
     ttk.Checkbutton(outer, text="Also make the installer for the HOME Menu (.cia, install it with FBI). Adds a few minutes.",
                     variable=want_cia).pack(anchor="w", pady=(0, 6))
 
-    go = tk.Button(outer, text="Build and install", font=(big[0], 15, "bold"), bg="#2da44e", fg="white",
-                   activebackground="#2c974b", activeforeground="white", relief="flat", padx=20, pady=10,
+    ttk.Label(outer, text="5.  Press the green button and wait. The first build takes a while (up to an hour); "
+              "later ones are much faster. You can leave it running.", style="Step.TLabel", wraplength=720).pack(anchor="w", pady=(4, 0))
+    go = tk.Button(outer, text="Build my game and put it on the SD card", font=(big[0], 15, "bold"), bg=GREEN, fg="white",
+                   activebackground="#3aa05c", activeforeground="white", relief="flat", padx=20, pady=10,
                    cursor="hand2", command=lambda: start("auto"))
-    go.pack(fill="x", pady=(4, 4))
-    upd = tk.Button(outer, text="Update: download the newest game code from GitHub, rebuild, then copy",
-                    font=(big[0], 12, "bold"), bg="#0969da", fg="white", activebackground="#0860ca", activeforeground="white",
+    go.pack(fill="x", pady=(4, 2))
+    ttk.Label(outer, text="Green: the normal button. Builds what you ticked and copies it to the SD card. "
+              "Blue: the same, but always downloads the newest game code first.",
+              foreground=MUTED, wraplength=720).pack(anchor="w", pady=(0, 6))
+    upd = tk.Button(outer, text="Get the newest game updates from GitHub, then rebuild and copy",
+                    font=(big[0], 12, "bold"), bg=BLUE, fg="white", activebackground="#3a7fc8", activeforeground="white",
                     relief="flat", padx=16, pady=6, cursor="hand2", command=lambda: start("update"))
     upd.pack(fill="x", pady=(0, 8))
-    newer_lbl = tk.Label(outer, text="", fg="#0969da", cursor="hand2", font=(big[0], 11, "bold", "underline"))
+    newer_lbl = tk.Label(outer, text="", fg="#7db7ff", bg=BG, cursor="hand2", font=(big[0], 11, "bold", "underline"))
 
     def check_newer():
         r = newer_release()
@@ -867,8 +913,32 @@ def run_gui():
             q.put(("newer", r[0], r[1]))
     threading.Thread(target=check_newer, daemon=True).start()
 
-    prog = ttk.Progressbar(outer, mode="determinate", maximum=100)
+    style.configure("Game.Horizontal.TProgressbar", thickness=22, background="#8a8f96", troughcolor=PANEL, bordercolor=PANEL,
+                    lightcolor="#8a8f96", darkcolor="#8a8f96")
+    pct_var = tk.StringVar(value="")
+    ttk.Label(outer, textvariable=pct_var, style="Step.TLabel").pack(anchor="w")
+    prog = ttk.Progressbar(outer, mode="determinate", maximum=100, style="Game.Horizontal.TProgressbar")
     prog.pack(fill="x")
+    anim = {"target": 0.0, "shown": 0.0, "spin": 0}
+
+    def bar_color(col):
+        style.configure("Game.Horizontal.TProgressbar", background=col, lightcolor=col, darkcolor=col)
+
+    def set_target(v, jump=False):
+        anim["target"] = float(v)
+        if jump:
+            anim["shown"] = float(v)
+
+    def animate():
+        """Glide the bar toward its target so it moves smoothly instead of jumping; show percent and a spinner."""
+        d = anim["target"] - anim["shown"]
+        anim["shown"] = anim["target"] if abs(d) < 0.15 else anim["shown"] + d * 0.12
+        prog.configure(value=anim["shown"])
+        if st["busy"]:
+            anim["spin"] += 1
+            sp = "|/-\\"[(anim["spin"] // 3) % 4]
+            pct_var.set("%s  %d%%   %s" % (sp, int(anim["shown"]), st["step_name"]))
+        root.after(60, animate)
     ttk.Label(outer, textvariable=activity, foreground=MUTED, wraplength=720).pack(anchor="w", pady=(2, 0))
     srow = ttk.Frame(outer)
     srow.pack(fill="x", pady=(4, 0))
@@ -923,20 +993,29 @@ def run_gui():
                             "Nothing to remove: this builder has nothing set to start at boot.")
     if IS_WIN:
         ttk.Button(adv, text="Clean up boot entries (stops it from starting at boot)", command=do_clean_boot).pack(anchor="w", pady=(6, 0))
-    ttk.Checkbutton(adv, text="Offline: do not check GitHub for game updates on 'Build and install' (the Update button still does)",
+    ttk.Checkbutton(adv, text="Offline: do not check GitHub for game updates on the green button (the blue button still does)",
                     variable=offline).pack(anchor="w")
+    ttk.Label(adv, text="Maintenance tools. You normally never need these: the green button does everything. "
+              "Each one is explained next to its button.", foreground=MUTED, wraplength=720).pack(anchor="w", pady=(10, 4))
     abar = ttk.Frame(adv)
-    abar.pack(fill="x", pady=(6, 0))
+    abar.pack(fill="x")
+    abar.columnconfigure(1, weight=1)
     adv_buttons = []
-    for text, pipe in (("Check setup", "check"), ("Test my patches (Platinum)", "test"), ("Quick rebuild", "quick"),
-                       ("Reinstall tools", "install"), ("Rebuild everything", "full"), ("Clean build tree", "cleantree"),
-                       ("Clean up old builds", "clean")):
+    for i, (text, pipe, why) in enumerate((
+            ("Check my setup", "check", "Only looks, changes nothing. Shows what is installed and what is missing. Use it first if something fails."),
+            ("Test my patches (Platinum)", "test", "Checks that your Platinum patches still fit the game code. Nothing is built or changed."),
+            ("Quick rebuild", "quick", "Re-applies patches and rebuilds only what changed, then copies it. Fast. Use after a small change."),
+            ("Reinstall build tools", "install", "Downloads and installs the compilers again. Use if the check says a tool is broken or missing."),
+            ("Rebuild everything (slow)", "full", "Rebuilds the whole game from scratch. Takes a long time. Use if a normal build gives odd results."),
+            ("Delete build files (slow next time)", "cleantree", "Deletes the temporary build folder, so the next build starts from zero. Your saves, game files and SD card are kept."),
+            ("Delete old builds", "clean", "Removes old finished builds to free disk space. You are asked before anything is deleted."))):
         b = ttk.Button(abar, text=text, command=lambda p=pipe: start(p))
-        b.pack(side="left", padx=(0, 6))
+        b.grid(row=i, column=0, sticky="ew", pady=2)
+        ttk.Label(abar, text=why, foreground=MUTED, wraplength=470, justify="left").grid(row=i, column=1, sticky="w", padx=(10, 0))
         adv_buttons.append(b)
 
     logf = ttk.Frame(folds)
-    log = tk.Text(logf, wrap="word", height=12, bg="#111", fg="#ddd", insertbackground="#ddd",
+    log = tk.Text(logf, wrap="word", height=12, bg="#1f2124", fg="#d8dadd", insertbackground="#d8dadd",
                   font=("Consolas" if IS_WIN else "monospace", 9))
     sb = ttk.Scrollbar(logf, command=log.yview)
     log.configure(yscrollcommand=sb.set, state="disabled")
@@ -971,7 +1050,7 @@ def run_gui():
                 "%s commit %s (%s): %s" % (GAMES.get(g, {}).get("name", g), h[0][:7], h[1], h[2]) for g, h in st["head"].items())
         if st.get("news"):
             text = "Game code on GitHub - " + "; ".join(st["news"]) + "\n" + text
-        banner.configure(text=text, bg="#dafbe1" if ok else "#ffebe9", fg=GOOD if ok else BAD)
+        banner.configure(text=text, bg="#27472f" if ok else "#5a2f2f", fg=GOOD if ok else BAD)
         banner.pack(fill="x", pady=(8, 0), before=folds)
         brow.pack(fill="x", pady=(4, 0), before=folds)
         if folder:
@@ -1009,6 +1088,7 @@ def run_gui():
     def refresh(*_):
         # a game's boxes only show while its tick is on (the Platinum box also takes SoulSilver's ROM for following Pokemon)
         follow_note.pack_forget()
+        apply_theme()
         for key, var in (("platinum", want_plat), ("soulsilver", want_ss)):
             # the SoulSilver box also shows for Platinum alone: that file is what adds following Pokemon
             if var.get() or (key == "soulsilver" and want_plat.get()):
@@ -1045,8 +1125,8 @@ def run_gui():
         st["busy"] = b
         for x in adv_buttons:
             x.configure(state="disabled" if b else "normal")
-        go.configure(state="disabled" if b else "normal", bg="#94d3a2" if b else "#2da44e")
-        upd.configure(state="disabled" if b else "normal", bg="#8bb9f0" if b else "#0969da")
+        go.configure(state="disabled" if b else "normal", bg=GREEN_DIM if b else GREEN)
+        upd.configure(state="disabled" if b else "normal", bg=BLUE_DIM if b else BLUE)
         cancel_btn.configure(state="normal" if b else "disabled")
 
     def cancel():
@@ -1383,7 +1463,9 @@ def run_gui():
         log.configure(state="normal")
         log.delete("1.0", "end")
         log.configure(state="disabled")
-        prog.configure(value=0)
+        set_target(0, True)
+        bar_color(THEMES["both" if want_plat.get() and want_ss.get() else "soulsilver" if want_ss.get() else "platinum" if want_plat.get() else "none"][1])
+        pct_var.set("")
         st["t0"], st["last"], st["cur"] = time.time(), "", ""
         set_busy(True)
         status.set("Starting...")
@@ -1400,14 +1482,20 @@ def run_gui():
         c = current_cfg()
         if st["cancel"]:
             status.set("Cancelled.")
+            bar_color("#8a8f96")
+            pct_var.set("Cancelled at %d%%. Press the button to carry on." % int(anim["shown"]))
             show_banner(False, "Cancelled. Press the button again to carry on where it stopped.")
             return
         if not ok:
             status.set("Stopped.")
+            bar_color("#d9534f")
+            pct_var.set("Stopped at %d%%. Read the red box below; 'Copy details for help' sends it to me." % int(anim["shown"]))
             show_banner(False, explain(text, st["hint"], st["failed"]))
             toggle("details", True)
             return
-        prog.configure(value=100)
+        set_target(100)
+        bar_color("#4caf6a")
+        pct_var.set("Done!  100%")
         status.set("Done.")
         if pipe in ("check", "test", "install", "clean", "cleantree"):
             msg = {"clean": "Clean up finished.", "check": "Setup checked. Anything marked MISSING is installed by the green button.",
@@ -1445,7 +1533,7 @@ def run_gui():
             frac = 0.0
             if cur and cur not in ("needs", "get"):
                 frac = min(0.9, (time.time() - st["t_step"]) / STEP_SECS.get(cur, 60)) * STEP_WEIGHT.get(cur, 2)
-                prog.configure(value=100.0 * min(st["done_w"] + frac, st["plan_w"]) / max(st["plan_w"], 1))
+                set_target(100.0 * min(st["done_w"] + frac, st["plan_w"]) / max(st["plan_w"], 1))
             last = st["last"][:90]
             activity.set("Working for %d:%02d. Still going, safe to leave it.%s" %
                          (el // 60, el % 60, ("  Latest: " + last) if last else ""))
@@ -1459,6 +1547,7 @@ def run_gui():
                     emit(a, b)
                 elif kind == "step":
                     st["cur"], st["t_step"] = a, time.time()
+                    st["step_name"] = FRIENDLY.get(a, "")
                     n = max(st["planned"], 1)
                     if a not in ("needs", "get"):
                         status.set("Step %d of %d: %s..." % (min(st["done_steps"] + 1, n), n, FRIENDLY.get(a, a)))
@@ -1469,7 +1558,7 @@ def run_gui():
                         st["done_steps"] += 1
                         st["done_w"] += STEP_WEIGHT.get(a, 2)
                     st["cur"] = ""
-                    prog.configure(value=100.0 * min(st["done_w"], st["plan_w"]) / max(st["plan_w"], 1))
+                    set_target(100.0 * min(st["done_w"], st["plan_w"]) / max(st["plan_w"], 1))
                 elif kind == "wsldone":
                     set_busy(False)
                     activity.set("")
@@ -1535,6 +1624,7 @@ def run_gui():
     refresh()
     pump()
     tick()
+    animate()
     root.mainloop()
 
 
