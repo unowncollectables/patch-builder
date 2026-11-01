@@ -209,6 +209,12 @@ step_build() {
 step_link() {
   [ -d "$TREE" ] || { die "the game is not compiled yet - run the 'build' step first"; return 1; }
   build_env
+  # Never trust an old link: if any compiled object/archive of the game is newer than the .elf, throw the .elf away so it must relink.
+  local elf0="$FULLDIR/soulsilver3ds.elf" newer
+  if [ -f "$elf0" ]; then
+    newer=$(find "$ROOT/pspoke/.work" "$FULLDIR/build" \( -name '*.a' -o -name '*.o' \) -newer "$elf0" -print -quit 2>/dev/null)
+    [ -n "$newer" ] && { say "  [fresh]   the game changed since the last link ($(basename "$newer")); relinking"; rm -f "$elf0" "$OUT3DSX"; }
+  fi
   ( cd "$FULLDIR" && make check && make soulsilver3ds.3dsx ) || { die "link failed (error above)"; hint "The game did not link. The first red 'error' line in the details is the cause."; return 1; }
   [ -f "$OUT3DSX" ] || { die "no .3dsx produced"; return 1; }
   ok "built $(stat -c %s "$OUT3DSX") bytes  SHA1 $(sha1sum "$OUT3DSX" | cut -c1-12)"
@@ -223,8 +229,10 @@ step_link() {
 step_cia() {
   [ -f "$FULLDIR/soulsilver3ds.elf" ] || { die "nothing linked yet - run the 'link' step first"; return 1; }
   build_env
+  rm -f "$OUTCIA"      # a leftover .cia must never be copied to the card by mistake
   ( cd "$FULLDIR" && make cia ) || { die "making the .cia failed (error above)"; hint "The HOME Menu (.cia) version failed. The .3dsx still works. Press 'Copy details for help'."; return 1; }
   [ -f "$OUTCIA" ] || { die "no .cia produced"; return 1; }
+  [ "$OUTCIA" -nt "$FULLDIR/soulsilver3ds.elf" ] || { die "the .cia is older than the game it should contain"; hint "The HOME Menu installer did not come out fresh, so it was not used. Press the button again; if it repeats, press 'Copy details for help'."; rm -f "$OUTCIA"; return 1; }
   CIA_BUILT=1
   ok "built $(stat -c %s "$OUTCIA") bytes soulsilver3ds.cia"
 }
