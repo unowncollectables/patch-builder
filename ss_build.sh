@@ -193,6 +193,25 @@ step_stage() {
 }
 
 # ------------------------------------------------------------------------------------------------ build / link / cia
+# Proves every patch in the project is really in the build: prints the count and fails if one is missing.
+patch_report() {
+  local P="$ROOT/pspoke" p subj have total=0 miss=0 last=""
+  [ -d "$P/.git" ] || return 0
+  have=$(git -C "$P" log --format=%s ss3ds 2>/dev/null)
+  for p in "$ROOT"/pspoke-patches/*.patch; do
+    [ -f "$p" ] || continue
+    total=$((total+1)); last=$(basename "$p")
+    subj=$(sed -n 's/^Subject: \[PATCH[^]]*\] //p' "$p" | head -1)
+    grep -qF -- "$subj" <<<"$have" || { miss=$((miss+1)); say "  [MISSING] patch not in the build: $(basename "$p")"; }
+  done
+  if [ "$miss" -gt 0 ]; then
+    die "$miss patch(es) are in the project but NOT in the build"
+    hint "Some of the project's patches are missing from the build, so the game would be out of date. Press 'Copy details for help' and send it; do not install anything from this run."
+    return 1
+  fi
+  ok "all $total patches are in the build (newest: $last)"
+}
+
 step_build() {
   [ -f "$ROM" ] || { die "SoulSilver ROM not selected"; return 1; }
   [ -x "$DKP/devkitARM/bin/arm-none-eabi-gcc" ] || { die "devkitARM missing - run 'setup'"; return 1; }
@@ -200,7 +219,14 @@ step_build() {
   g=$(free_gb "$ROOT"); [ -n "$g" ] && [ "$g" -lt 4 ] && { die "only ${g} GB free"; hint "The disk is almost full (${g} GB free). Free up about 8 GB and press the button again."; return 1; }
   build_env; cd "$ROOT" || return 1
   say "Compiling SoulSilver. The first time this takes a long time (it downloads the decompilation); later builds are quick."
-  bash scripts/bootstrap.sh >/dev/null 2>&1 || true   # applies new pspoke-patches now, so sync_staged sees them
+  say "Project version: $(git -C "$ROOT" log -1 --format='commit %h (%cs): %s' 2>/dev/null)"
+  local bl; bl=$(bash scripts/bootstrap.sh 2>&1); local brc=$?   # applies new pspoke-patches now, so sync_staged sees them
+  printf '%s\n' "$bl" | grep -E '^(applied|moved) ' | sed 's/^/  [patch]   /'
+  if [ "$brc" -ne 0 ]; then
+    printf '%s\n' "$bl" | tail -15
+    die "applying the project's patches failed"; hint "A patch could not be applied, so building now would give you an OLD or broken game. Press 'Copy details for help' and send it; do not install anything from this run."; return 1
+  fi
+  patch_report || return 1
   sync_staged
   bash scripts/ss3ds_build.sh "$ROM" || { die "scripts/ss3ds_build.sh failed - the real error is higher up in the log"; return 1; }
   ok "game compiled"
