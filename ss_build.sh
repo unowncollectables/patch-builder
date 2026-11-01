@@ -212,6 +212,12 @@ step_link() {
   ( cd "$FULLDIR" && make check && make soulsilver3ds.3dsx ) || { die "link failed (error above)"; hint "The game did not link. The first red 'error' line in the details is the cause."; return 1; }
   [ -f "$OUT3DSX" ] || { die "no .3dsx produced"; return 1; }
   ok "built $(stat -c %s "$OUT3DSX") bytes  SHA1 $(sha1sum "$OUT3DSX" | cut -c1-12)"
+  # Proof that this is a NEW binary and not an old one left over: when it was linked, and whether it holds the GTS marker.
+  local elf="$FULLDIR/soulsilver3ds.elf"
+  if [ -f "$elf" ]; then
+    ok "linked $(date -r "$elf" '+%Y-%m-%d %H:%M:%S')  (project commit $(git -C "$ROOT" log -1 --format=%h 2>/dev/null))"
+    if grep -qa 'ss3ds 0179' "$elf"; then ok "GTS marker 'ss3ds 0179' is in this binary"; else say "  [--]      GTS marker 'ss3ds 0179' NOT in this binary (an old build, or the GTS fix is not in this project version)"; fi
+  fi
 }
 
 step_cia() {
