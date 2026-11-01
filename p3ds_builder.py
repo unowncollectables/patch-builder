@@ -10,7 +10,7 @@ Package as an .exe with build_exe.bat (PyInstaller). Standard library only.
 """
 import hashlib, json, os, re, string, subprocess, sys, threading, queue, time, urllib.request, webbrowser
 
-VERSION = "1.3.2"   # bump before tagging a release; compared with the newest GitHub release
+VERSION = "1.3.3"   # bump before tagging a release; compared with the newest GitHub release
 RELEASES_API = "https://api.github.com/repos/unowncollectables/patch-builder/releases/latest"
 RELEASES_PAGE = "https://github.com/unowncollectables/patch-builder/releases/latest"
 
@@ -19,9 +19,9 @@ HERE = os.path.dirname(os.path.abspath(sys.argv[0] if getattr(sys, "frozen", Fal
 # The .exe carries its own copy of the build scripts (build_exe.bat bundles them), so it works from any folder.
 SCRIPTS = getattr(sys, "_MEIPASS", HERE)
 SETTINGS = os.path.join(os.path.expanduser("~"), ".p3ds_builder.json")
-LAST_LOG = os.path.join(os.path.expanduser("~"), "p3ds_builder_last_log.txt")
 FIELDS = ["repo", "ssrepo", "platinum", "soulsilver", "out", "sd"]
 DEFAULT_OUT = os.path.join(os.path.expanduser("~"), "Documents", "Pokemon 3DS Builds")
+LAST_LOG = os.path.join(DEFAULT_OUT, "p3ds_builder_last_log.txt")   # easy to find in Documents (was your user folder)
 PLAT_SHA1 = "0862ec35b24de5c7e2dcb88c9eea0873110d755c"
 SS_SHA1 = "f8dc38ea20c17541a43b58c5e6d18c1732c7e582"   # pspoke's tested SoulSilver (US) dump; upstream.lock in the SoulSilver repo
 GAMES = {   # per game: the build script, the config field holding its project folder, a file that marks that folder
@@ -1475,6 +1475,7 @@ def run_gui():
         set_busy(False)
         text = log.get("1.0", "end")
         try:
+            os.makedirs(os.path.dirname(LAST_LOG), exist_ok=True)
             with open(LAST_LOG, "w", encoding="utf-8") as f:
                 f.write(text)
         except OSError:
