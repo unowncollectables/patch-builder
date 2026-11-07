@@ -39,7 +39,10 @@ def run_patch(args, data, cwd):
 def state(data, args, cwd):
     """'apply' (not in the tree yet) | 'done' (already in) | 'conflict'"""
     # Reverse first: a patch that only adds lines also dry-runs forward when it is already in, which re-applied it twice.
-    if run_patch(["-R", "--dry-run"] + args, data, cwd).returncode == 0:
+    # With --batch, patch -R on a file where the patch is NOT in ignores -R ("Unreversed patch detected! Ignoring -R") and
+    # exits 0, so that exit code alone would call every unpatched file "done" and nothing would be installed.
+    r = run_patch(["-R", "--dry-run"] + args, data, cwd)
+    if r.returncode == 0 and b"Ignoring -R" not in r.stdout and b"Unreversed" not in r.stdout:
         return "done"
     if run_patch(["-N", "--dry-run"] + args, data, cwd).returncode == 0:
         return "apply"
