@@ -10,7 +10,7 @@ Package as an .exe with build_exe.bat (PyInstaller). Standard library only.
 """
 import hashlib, json, os, re, string, subprocess, sys, threading, queue, time, urllib.request, webbrowser
 
-VERSION = "1.3.12"   # bump before tagging a release; compared with the newest GitHub release
+VERSION = "1.3.13"   # bump before tagging a release; compared with the newest GitHub release
 RELEASES_API = "https://api.github.com/repos/unowncollectables/patch-builder/releases/latest"
 RELEASES_PAGE = "https://github.com/unowncollectables/patch-builder/releases/latest"
 
@@ -73,7 +73,7 @@ SS_PIPELINES = {   # the same Advanced buttons for SoulSilver
 # Known failure text -> what to tell the user. First match wins; the script's own ##HINT lines win over these.
 
 
-WRAP = 720      # text width (pixels) of the window's labels
+WRAP = 480      # text width (pixels) of the window's labels
 
 HINTS = [
     (r"0x80370102|Virtual Machine Platform|virtualization|HCS_E_HYPERV_NOT_INSTALLED",
@@ -792,8 +792,8 @@ def run_gui():
     root = tk.Tk()
     root.title("Pokemon 3DS Builder v" + VERSION)
     sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
-    root.geometry("%dx%d" % (min(800, sw - 40), min(860, sh - 80)))     # fits 1366x768 and 1080p
-    root.minsize(600, 420)
+    root.geometry("%dx%d" % (min(640, sw - 40), min(540, sh - 80)))
+    root.minsize(520, 400)
     root.resizable(True, True)
     cfg = load_settings()
     for g in GAMES:
@@ -840,13 +840,15 @@ def run_gui():
     style.configure("TEntry", fieldbackground=PANEL, foreground=FG)
     style.configure("Step.TLabel", font=(big[0], 11, "bold"))
 
-    # The whole window scrolls (mouse wheel or scrollbar), so nothing is cut off on small screens.
+    # Only the form and log scroll. The build action stays in view.
+    footer = ttk.Frame(root, padding=(12, 6, 12, 8))
+    footer.pack(side="bottom", fill="x")
     scroll_canvas = tk.Canvas(root, highlightthickness=0, borderwidth=0, bg=BG)
     vbar = ttk.Scrollbar(root, orient="vertical", command=scroll_canvas.yview)
     scroll_canvas.configure(yscrollcommand=vbar.set)
     vbar.pack(side="right", fill="y")
     scroll_canvas.pack(side="left", fill="both", expand=True)
-    outer = ttk.Frame(scroll_canvas, padding=14)
+    outer = ttk.Frame(scroll_canvas, padding=(12, 10))
     outer_id = scroll_canvas.create_window((0, 0), window=outer, anchor="nw")
     outer.bind("<Configure>", lambda e: scroll_canvas.configure(scrollregion=scroll_canvas.bbox("all")))
     scroll_canvas.bind("<Configure>", lambda e: scroll_canvas.itemconfigure(outer_id, width=e.width))
@@ -870,13 +872,9 @@ def run_gui():
               "heartgold": ("#d9a93a", "#b5462e", "Pokemon HeartGold (experimental)"),
               "both": ("#c9ccd3", "#8d9bb5", "Pokemon SoulSilver + Platinum"), "none": ("#8a8f96", "#8a8f96", "Pokemon 3DS Builder")}
     hdr = tk.Frame(outer, bg=BG)
-    hdr.pack(fill="x", pady=(0, 10))
-    stripe = tk.Frame(hdr, height=6, bg="#8a8f96")
-    stripe.pack(fill="x")
-    stripe_r = tk.Frame(stripe, height=6, bg="#8a8f96")
-    stripe_r.place(relx=0.5, rely=0, relwidth=0.5, relheight=1)
+    hdr.pack(fill="x", pady=(0, 6))
     hdr_title = tk.Label(hdr, text="Pokemon 3DS Builder", font=head, bg=BG, fg=FG, anchor="w")
-    hdr_title.pack(fill="x", pady=(8, 0))
+    hdr_title.pack(fill="x")
     hdr_sub = tk.Label(hdr, text="Play Pokemon on your 3DS", font=big, bg=BG, fg=MUTED, anchor="w")
     hdr_sub.pack(fill="x")
 
@@ -886,26 +884,21 @@ def run_gui():
 
     def apply_theme():
         k = theme_key()
-        a, b, name = THEMES[k]
+        _, b, name = THEMES[k]
         if k == "both":
             name = "Pokemon " + " + ".join(GAMES[g]["name"] for g, v in wants if v.get())
         if not st["busy"]:
             bar_color(b)
-        stripe.configure(bg=a)
-        stripe_r.configure(bg=b)
-        hdr_title.configure(fg=b if k != "both" else a)
         hdr_sub.configure(text="Selected: " + name if k != "none" else "Choose a game file to start")
-    ttk.Label(outer, text="Pick your .nds file, then press Build. An SD card is optional.",
-              foreground=MUTED, wraplength=WRAP).pack(anchor="w", pady=(0, 10))
 
     checks = {}
     boxes = {}
 
     def field(parent, key, title, kind, pick_label="Browse..."):
         box = ttk.Frame(parent)
-        box.pack(fill="x", pady=(0, 10))
+        box.pack(fill="x", pady=(0, 6))
         boxes[key] = box
-        ttk.Label(box, text=title, style="Step.TLabel").pack(anchor="w")
+        ttk.Label(box, text=title).pack(anchor="w")
         row = ttk.Frame(box)
         row.pack(fill="x")
         ent = ttk.Entry(row, textvariable=vars_[key], font=big)
@@ -926,7 +919,7 @@ def run_gui():
         checks[key] = msg
         return row
 
-    ttk.Separator(outer).pack(fill="x", pady=(0, 8))
+    ttk.Label(outer, text="1. Game files", style="Step.TLabel").pack(anchor="w")
     def choose_games():
         files = filedialog.askopenfilenames(title="Choose your Pokemon game files", filetypes=[("DS game files", "*.nds")])
         if not files:
@@ -979,7 +972,12 @@ def run_gui():
                 if f:
                     vars_[g].set(os.path.normpath(f) if IS_WIN else f)
 
-    sd_row = field(outer, "sd", "Copy to a 3DS SD card (optional)", "dir")
+    ttk.Label(outer, text="2. Build options", style="Step.TLabel").pack(anchor="w", pady=(5, 2))
+    field(outer, "out", "Output folder", "dir")
+    ttk.Checkbutton(outer, text="Make a HOME Menu installer (.cia)", variable=want_cia).pack(anchor="w", pady=(0, 6))
+
+    ttk.Label(outer, text="3. SD card (optional)", style="Step.TLabel").pack(anchor="w", pady=(3, 2))
+    sd_row = field(outer, "sd", "Copy to", "dir")
 
     def find_sd():
         cards = find_sd_cards()
@@ -993,21 +991,17 @@ def run_gui():
                                            "or use Browse.")
     ttk.Button(sd_row, text="Find SD card", command=find_sd).pack(side="left", padx=(6, 0))
     ttk.Button(sd_row, text="Clear", command=lambda: vars_["sd"].set("")).pack(side="left", padx=(6, 0))
-    destination = ttk.Label(outer, text="", foreground=MUTED, wraplength=WRAP)
-    destination.pack(anchor="w", pady=(0, 6))
-
-    ttk.Separator(outer).pack(fill="x", pady=(6, 8))
-    go = tk.Button(outer, text="", font=(big[0], 15, "bold"), bg=GREEN, fg="white",
-                   activebackground="#3aa05c", activeforeground="white", relief="flat", padx=20, pady=10,
-                   cursor="hand2", command=lambda: start("auto"))
-    go.pack(fill="x", pady=(4, 2))
-    ttk.Label(outer, text="The first build can take an hour or more. Later builds are quicker.",
-              foreground=MUTED, wraplength=WRAP).pack(anchor="w", pady=(0, 4))
-    clean_hint = tk.Label(outer, text="", bg=BG, fg="#ffb020", font=(big[0], 11, "bold"),
-                          wraplength=WRAP, justify="left", anchor="w")
+    clean_hint = tk.Label(outer, text="", bg=BG, fg="#ffb020", font=(big[0], 10, "bold"),
+                          wraplength=500, justify="left", anchor="w")
     clean_hint.pack(fill="x")
 
-    newer_lbl = tk.Label(outer, text="", fg="#7db7ff", bg=BG, cursor="hand2", font=(big[0], 11, "bold", "underline"))
+    ttk.Separator(footer).pack(fill="x", pady=(0, 5))
+    go = tk.Button(footer, text="", font=(big[0], 13, "bold"), bg=GREEN, fg="white",
+                   activebackground="#3aa05c", activeforeground="white", relief="flat", padx=12, pady=6,
+                   cursor="hand2", command=lambda: start("auto"))
+    go.pack(fill="x")
+
+    newer_lbl = tk.Label(outer, text="", fg="#7db7ff", bg=BG, cursor="hand2", font=(big[0], 10, "bold", "underline"))
 
     def check_newer():
         r = newer_release()
@@ -1015,13 +1009,14 @@ def run_gui():
             q.put(("newer", r[0], r[1]))
     threading.Thread(target=check_newer, daemon=True).start()
 
-    style.configure("Game.Horizontal.TProgressbar", thickness=22, background="#8a8f96", troughcolor=PANEL, bordercolor=PANEL,
+    style.configure("Game.Horizontal.TProgressbar", thickness=8, background="#8a8f96", troughcolor=PANEL, bordercolor=PANEL,
                     lightcolor="#8a8f96", darkcolor="#8a8f96")
-    ttk.Separator(outer).pack(fill="x", pady=(6, 8))
     pct_var = tk.StringVar(value="")
-    ttk.Label(outer, textvariable=pct_var, style="Step.TLabel").pack(anchor="w")
-    prog = ttk.Progressbar(outer, mode="determinate", maximum=100, style="Game.Horizontal.TProgressbar")
+    progress = ttk.Frame(footer)
+    ttk.Label(progress, textvariable=pct_var).pack(anchor="w")
+    prog = ttk.Progressbar(progress, mode="determinate", maximum=100, style="Game.Horizontal.TProgressbar")
     prog.pack(fill="x")
+    ttk.Label(progress, textvariable=activity, foreground=MUTED, wraplength=495).pack(anchor="w")
     anim = {"target": 0.0, "shown": 0.0, "spin": 0}
 
     def bar_color(col):
@@ -1042,15 +1037,13 @@ def run_gui():
             sp = "|/-\\"[(anim["spin"] // 3) % 4]
             pct_var.set("%s  %d%%   %s" % (sp, int(anim["shown"]), st["step_name"]))
         root.after(60, animate)
-    ttk.Label(outer, textvariable=activity, foreground=MUTED, wraplength=WRAP).pack(anchor="w", pady=(2, 0))
-    srow = ttk.Frame(outer)
-    srow.pack(fill="x", pady=(4, 0))
-    ttk.Label(srow, textvariable=status, font=big).pack(side="left")
-    cancel_btn = ttk.Button(srow, text="Cancel", command=lambda: cancel(), state="disabled")
-    cancel_btn.pack(side="right")
+    toolbar = ttk.Frame(footer)
+    toolbar.pack(fill="x", pady=(5, 0))
+    cancel_btn = ttk.Button(toolbar, text="Cancel", command=lambda: cancel())
+    ttk.Label(progress, textvariable=status, wraplength=495).pack(anchor="w")
 
-    banner = tk.Label(outer, text="", font=(big[0], 11, "bold"), wraplength=WRAP, justify="left", anchor="w", padx=10, pady=8)
-    brow = ttk.Frame(outer)
+    banner = tk.Label(footer, text="", font=(big[0], 10, "bold"), wraplength=490, justify="left", anchor="w", padx=8, pady=5)
+    brow = ttk.Frame(footer)
 
     def copy_details():
         text = log.get("1.0", "end")
@@ -1076,15 +1069,13 @@ def run_gui():
     # ---- details + advanced (folded away) ----------------------------------------------------------------
     folds = ttk.Frame(outer)
     folds.pack(fill="both", expand=True, pady=(8, 0))
-    bar = ttk.Frame(folds)
-    bar.pack(fill="x")
-    details_btn = ttk.Button(bar, text="Show details")
-    adv_btn = ttk.Button(bar, text="Advanced")
+    details_btn = ttk.Button(toolbar, text="Build log")
+    adv_btn = ttk.Button(toolbar, text="Advanced")
     details_btn.pack(side="left")
     adv_btn.pack(side="left", padx=(6, 0))
 
     adv = ttk.Frame(folds, padding=(0, 8, 0, 0))
-    ttk.Label(adv, text="Build options", style="Step.TLabel").pack(anchor="w")
+    ttk.Label(adv, text="Manual game selection", style="Step.TLabel").pack(anchor="w")
     choices = ttk.Frame(adv)
     choices.pack(fill="x", pady=(2, 6))
     for game, var in wants:
@@ -1100,8 +1091,6 @@ def run_gui():
 
     followers_btn = ttk.Button(adv, text="Add SoulSilver for Platinum followers…", command=pick_followers)
     followers_btn.pack(anchor="w", pady=(0, 8))
-    field(adv, "out", "Save finished files to", "dir")
-    ttk.Checkbutton(adv, text="Also make a HOME Menu installer (.cia)", variable=want_cia).pack(anchor="w", pady=(0, 8))
     ttk.Separator(adv).pack(fill="x", pady=(0, 8))
     ttk.Label(adv, text="Project folders: leave empty and the builder downloads them for you (into your Linux/WSL home).",
               foreground=MUTED, wraplength=WRAP).pack(anchor="w", pady=(0, 6))
@@ -1135,7 +1124,7 @@ def run_gui():
             ("Delete old builds", "clean", "Removes old finished builds to free disk space. You are asked before anything is deleted."))):
         b = ttk.Button(abar, text=text, command=lambda p=pipe: start(p))
         b.grid(row=i, column=0, sticky="ew", pady=2)
-        ttk.Label(abar, text=why, foreground=MUTED, wraplength=470, justify="left").grid(row=i, column=1, sticky="w", padx=(10, 0))
+        ttk.Label(abar, text=why, foreground=MUTED, wraplength=290, justify="left").grid(row=i, column=1, sticky="w", padx=(10, 0))
         adv_buttons.append(b)
 
     logf = ttk.Frame(folds)
@@ -1154,10 +1143,14 @@ def run_gui():
         shown[which] = on
         w = logf if which == "details" else adv
         if on:
-            w.pack(fill="both" if which == "details" else "x", expand=(which == "details"), after=bar)
+            w.pack(fill="both" if which == "details" else "x", expand=(which == "details"))
+            root.update_idletasks()
+            scroll_canvas.yview_moveto((w.winfo_rooty() - outer.winfo_rooty()) / max(outer.winfo_height(), 1))
         else:
             w.pack_forget()
-        details_btn.configure(text="Hide details" if shown["details"] else "Show details")
+            if not any(shown.values()):
+                scroll_canvas.yview_moveto(0)
+        details_btn.configure(text="Hide log" if shown["details"] else "Build log")
         adv_btn.configure(text="Hide advanced" if shown["adv"] else "Advanced")
     details_btn.configure(command=lambda: toggle("details"))
     adv_btn.configure(command=lambda: toggle("adv"))
@@ -1170,8 +1163,8 @@ def run_gui():
 
     def show_banner(ok, text, folder=""):
         banner.configure(text=text, bg="#27472f" if ok else "#5a2f2f", fg=GOOD if ok else BAD)
-        banner.pack(fill="x", pady=(8, 0), before=folds)
-        brow.pack(fill="x", pady=(4, 0), before=folds)
+        banner.pack(fill="x", pady=(3, 0), before=go)
+        brow.pack(fill="x", pady=(3, 3), before=go)
         if folder:
             open_btn.configure(command=lambda: open_folder(folder))
             open_btn.pack(side="left", padx=(6, 0))
@@ -1232,13 +1225,11 @@ def run_gui():
         for key, var in wants:
             # A saved SoulSilver file can also be used for Platinum's optional followers.
             if var.get() or (key == "soulsilver" and want_plat.get() and vars_[key].get().strip()):
-                boxes[key].pack(fill="x", pady=(0, 10))
+                boxes[key].pack(fill="x", pady=(0, 6))
                 check_rom(key)
             else:
                 boxes[key].pack_forget()
         followers_btn.configure(state="normal" if want_plat.get() and not want_ss.get() else "disabled")
-        c = current_cfg()
-        destination.configure(text="Files save to %s%s" % (c["out"], " • HOME Menu installer included" if c["cia"] else ""))
         update_build_button()
         set_check("sd", *sd_report(vars_["sd"].get().strip().strip('"')))
         set_check("repo", *project_report(vars_["repo"].get().strip().strip('"'), "platinum"))
@@ -1267,7 +1258,12 @@ def run_gui():
             x.configure(state="disabled" if b else "normal")
         choose_btn.configure(state="disabled" if b else "normal")
         update_build_button()
-        cancel_btn.configure(state="normal" if b else "disabled")
+        if b:
+            progress.pack(fill="x", before=toolbar, pady=(4, 0))
+            cancel_btn.pack(side="right")
+        else:
+            progress.pack_forget()
+            cancel_btn.pack_forget()
 
     def cancel():
         st["cancel"] = True
@@ -1601,6 +1597,7 @@ def run_gui():
         st["t0"], st["last"], st["cur"] = time.time(), "", ""
         set_busy(True)
         status.set("Starting...")
+        activity.set("")
         threading.Thread(target=worker, args=(pipe, c), daemon=True).start()
 
     def finish(ok, pipe):
@@ -1688,8 +1685,7 @@ def run_gui():
                     set_busy(False)
                     activity.set("")
                     if a and b[1] == "ok":
-                        status.set("WSL + Ubuntu are ready. Press the green button again.")
-                        messagebox.showinfo("One-time setup", "WSL + Ubuntu are ready. Press the green button again.")
+                        show_banner(True, "WSL and Ubuntu are ready. Press Build to continue.")
                     elif a and b[1] == "no-virt":
                         status.set("")
                         wsl_virt_help()
@@ -1725,7 +1721,7 @@ def run_gui():
                 elif kind == "newer":
                     newer_lbl.configure(text="A newer builder is available (%s, you have v%s). Click here to download it." % (a, VERSION))
                     newer_lbl.bind("<Button-1>", lambda e, u=b: webbrowser.open(u))
-                    newer_lbl.pack(anchor="w", after=go, pady=(0, 6))
+                    newer_lbl.pack(anchor="w", before=folds, pady=(0, 4))
                 elif kind == "project":
                     vars_[GAMES[a]["repo"]].set(b)
                 elif kind == "recheck":
