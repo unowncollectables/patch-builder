@@ -1,4 +1,4 @@
-name: Verify v1.3.9 clean Ubuntu setup
+name: Verify unattended devkitPro setup
 on:
   push:
     branches: [test/v1.3.9-clean-ubuntu]
@@ -6,14 +6,18 @@ permissions:
   contents: read
 jobs:
   setup:
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: v1.3.9
+          ref: a34ba8bc6fb8fcd01598e4cddaf9de7d92e4b99b
           persist-credentials: false
-      - name: Run the released builder setup on clean Ubuntu
+      - name: Run setup on a clean Ubuntu VM
         shell: bash
         run: |
           test ! -e /opt/devkitpro
@@ -22,9 +26,31 @@ jobs:
           mkdir -p "$fixture/pspoke-patches" "$fixture/scripts" "$fixture/heartgold3ds/full"
           touch "$fixture/upstream.lock" "$fixture/scripts/hg_build.sh" "$fixture/heartgold3ds/full/Makefile"
           sudo -n env P3DS_ROOT="$fixture" bash hg_build.sh setup </dev/null
-          /opt/devkitpro/devkitARM/bin/arm-none-eabi-gcc -dumpversion
-          test -r /opt/devkitpro/libctru/include/3ds.h
-          test -r /opt/devkitpro/libctru/include/citro3d.h
-          test -x /opt/devkitpro/tools/bin/3dsxtool
-          test -x /opt/devkitpro/tools/bin/picasso
+          env P3DS_ROOT="$fixture" bash hg_build.sh needs | tee "$fixture/needs"
+          ! grep -q '^##NEED:setup' "$fixture/needs"
           python3 -I -c 'import ndspy, PIL, numpy'
+          printf '#include <3ds.h>\n#include <citro3d.h>\nint main(void) { gfxInitDefault(); C3D_Init(C3D_DEFAULT_CMDBUF_SIZE); C3D_Fini(); gfxExit(); return 0; }\n' > "$fixture/smoke.c"
+          /opt/devkitpro/devkitARM/bin/arm-none-eabi-gcc -dumpversion
+          /opt/devkitpro/devkitARM/bin/arm-none-eabi-gcc -specs=3dsx.specs -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft \
+            -I/opt/devkitpro/libctru/include "$fixture/smoke.c" -L/opt/devkitpro/libctru/lib \
+            -lcitro3d -lctru -lm -o "$fixture/smoke.elf"
+          /opt/devkitpro/tools/bin/3dsxtool "$fixture/smoke.elf" "$fixture/smoke.3dsx"
+          test -s "$fixture/smoke.3dsx"
+          echo "SDK compiled and packaged a minimal 3DS program."
+          echo "FIXTURE=$fixture" >> "$GITHUB_ENV"
+      - name: Recover from a half-configured package and keep the installed SDK
+        if: matrix.runner == 'ubuntu-24.04'
+        shell: bash
+        run: |
+          pkg="$(mktemp -d)"
+          mkdir -p "$pkg/DEBIAN"
+          printf 'Package: devkitpro-pacman\nVersion: 0.0.1\nArchitecture: all\nMaintainer: Test <test@example.org>\nDescription: simulated failed setup\n' > "$pkg/DEBIAN/control"
+          printf '#!/bin/sh\nexit 1\n' > "$pkg/DEBIAN/postinst"
+          chmod +x "$pkg/DEBIAN/postinst"
+          dpkg-deb --build "$pkg" "$FIXTURE/incomplete.deb"
+          if sudo -n dpkg -i "$FIXTURE/incomplete.deb"; then exit 1; fi
+          test "$(dpkg-query -W -f='${db:Status-Status}' devkitpro-pacman)" = half-configured
+          sudo -n env P3DS_ROOT="$FIXTURE" bash hg_build.sh setup </dev/null | tee "$FIXTURE/retry.log"
+          grep -q 'Recovering from an incomplete devkitPro' "$FIXTURE/retry.log"
+          grep -q 'devkitARM already installed' "$FIXTURE/retry.log"
+          ! grep -q '^##NEED:setup' < <(env P3DS_ROOT="$FIXTURE" bash hg_build.sh needs)
