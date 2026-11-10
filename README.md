@@ -22,12 +22,12 @@ No game files are in this repo or in the download. Everything happens on your co
 ## Build and install
 
 1. Download **Pokemon3DSBuilder.exe** from the [latest release](https://github.com/unowncollectables/patch-builder/releases/latest) and open it.
-2. Tick the game you want and choose its US `.nds` dump. Platinum needs Rev 1. If you also choose a SoulSilver file while building Platinum, the builder can add following Pokémon.
+2. Click **Choose game files** and select one or more `.nds` files. The builder recognizes and checks each game for you. Use **Remove** to leave a game out.
 3. To install to your SD card, plug it in and click **Find SD card**. If more than one card is found, use **Browse**. Leave the field empty to save to your PC.
 4. Click **Build and install to SD** or **Build and save to PC**. If Windows needs to install WSL, follow the prompts, then reopen the builder after restarting. Your selections are saved.
 5. Open the finished game in Homebrew Launcher on your New 3DS. If you made a HOME Menu installer, use FBI to install its `.cia` from the card’s `cias` folder.
 
-The first build can take an hour or more. Finished files also go to **Documents → Pokemon 3DS Builds** by default. Use **Open output folder** to find the files and instructions.
+The first build can take an hour or more. Finished files also go to **Documents → Pokemon 3DS Builds** by default. Use **Open output folder** to find the files and instructions. **Advanced** has the output location, HOME Menu installer toggle, manual game selection, and the optional SoulSilver file for Platinum followers.
 
 The build button also checks for new game code. **Advanced → Offline** skips that check, and **Advanced → Update and build** checks even when Offline is selected. If a newer builder is available, the window links to the download.
 
@@ -68,12 +68,12 @@ If you skipped the SD card, copy the files into those folders yourself.
 | The HOME Menu icon is flat, not the animated 3D banner (Platinum) | The 3D banner needs Python 3.12+ in WSL (Ubuntu 24.04). The log says why; press **Copy details for help**. |
 | Anything else | Press **Copy details for help** and paste it into a [GitHub issue](https://github.com/unowncollectables/patch-builder/issues). Never attach game files. |
 
-SoulSilver works the same way: tick **Pokemon SoulSilver** and pick your US SoulSilver `.nds`.
+SoulSilver works the same way: pick your US SoulSilver `.nds` using **Choose game files**.
 Giving a SoulSilver file while building Platinum also adds following Pokemon to Platinum.
 
 ### HeartGold (experimental)
 
-Tick **Pokemon HeartGold** and pick your US HeartGold `.nds` in its own box. HeartGold is built from the SoulSilver project
+Pick your US HeartGold `.nds` using **Choose game files**. HeartGold is built from the SoulSilver project
 but is a completely separate game: its own download (`~/Pokemon-HeartGold-New3ds`), its own output folder (`HeartGold\`), its
 own SD folder and save, and its own HOME Menu icon (with Ho-Oh). Building or installing it never touches SoulSilver or its save,
 and you can have both installed. A SoulSilver file in the HeartGold box (or the other way round) gets a red cross.

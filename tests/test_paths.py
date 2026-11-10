@@ -79,6 +79,27 @@ class HeartGoldReady(unittest.TestCase):
         self.assertEqual({n: open(os.path.join(ssd, n), "rb").read() for n in os.listdir(ssd)}, before)
 
 
+class GameSelection(unittest.TestCase):
+    def test_identifies_game_by_header_even_with_unhelpful_names(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "backup.nds"
+            for code, game in ((b"CPUE", "platinum"), (b"IPGJ", "soulsilver"),
+                               (b"IPKE", "heartgold"), (b"ABCD", None), (b"IPK", None)):
+                with self.subTest(code=code):
+                    path.write_bytes(bytes(12) + code)
+                    self.assertEqual(b.identify_game_file(path), game)
+
+    def test_checks_soulsilver_as_optional_only_when_platinum_needs_it(self):
+        cfg = {"platinum": "plat.nds", "soulsilver": "ss.nds", "heartgold": "hg.nds", "want_plat": True}
+        self.assertEqual(b.chosen_roms(cfg), [("plat.nds", "platinum", False), ("ss.nds", "soulsilver", True)])
+        cfg["want_ss"] = True
+        self.assertEqual(b.chosen_roms(cfg), [("plat.nds", "platinum", False), ("ss.nds", "soulsilver", False)])
+        cfg.update(want_plat=False, want_ss=False, want_hg=True)
+        self.assertEqual(b.chosen_roms(cfg), [("hg.nds", "heartgold", False)])
+
+
 class SoulSilverReady(unittest.TestCase):
     def test_build_requires_clean_dump_but_platinum_followers_accept_us_file(self):
         from pathlib import Path
