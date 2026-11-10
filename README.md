@@ -3,9 +3,6 @@
 Turns **your own** Pokemon Platinum, SoulSilver or HeartGold cartridge dump into a game that runs natively on a **New Nintendo 3DS**.
 No game files are in this repo or in the download. Everything happens on your computer, with your file.
 
-> **Platinum status:** the Platinum project ([3ds-platinum](https://github.com/unowncollectables/3ds-platinum)) is **not public yet**.
-> Until it is, the Platinum build stops at "Downloading the project" with a message saying so. SoulSilver works today.
-
 ## What this installs and what you need
 
 **The builder installs everything by itself.** The first time you press the green button it sets up:
@@ -22,45 +19,17 @@ No game files are in this repo or in the download. Everything happens on your co
 - Time: the **first build takes about 1-2 hours** (mostly downloading and compiling). Later builds take minutes.
 - A **New** 3DS / New 2DS XL with custom firmware, and **your own** game dump.
 
-## What you need
+## Build and install
 
-- A Windows 10 or 11 PC (about 15 GB free space, internet).
-- A **New** 3DS / New 2DS XL with custom firmware (Luma3DS + Homebrew Launcher; FBI if you want a HOME Menu icon).
-- Your own clean dump of **Pokemon Platinum US, Rev 1** (`.nds`, 128 MB). Please do not ask anyone for ROMs.
+1. Download **Pokemon3DSBuilder.exe** from the [latest release](https://github.com/unowncollectables/patch-builder/releases/latest) and open it.
+2. Tick the game you want and choose its US `.nds` dump. Platinum needs Rev 1. If you also choose a SoulSilver file while building Platinum, the builder can add following Pokémon.
+3. To install to your SD card, plug it in and click **Find SD card**. If more than one card is found, use **Browse**. Leave the field empty to save to your PC.
+4. Click **Build and install to SD** or **Build and save to PC**. If Windows needs to install WSL, follow the prompts, then reopen the builder after restarting. Your selections are saved.
+5. Open the finished game in Homebrew Launcher on your New 3DS. If you made a HOME Menu installer, use FBI to install its `.cia` from the card’s `cias` folder.
 
-## Steps
+The first build can take an hour or more. Finished files also go to **Documents → Pokemon 3DS Builds** by default. Use **Open output folder** to find the files and instructions.
 
-1. Download **Pokemon3DSBuilder.exe** from the [Releases page](https://github.com/unowncollectables/patch-builder/releases) and double-click it.
-   (Windows may say "Windows protected your PC": press **More info**, then **Run anyway**.)
-2. Tick **Pokemon Platinum**.
-   *Optional:* **following Pokemon** (your Pokemon walks behind you) need your **SoulSilver** game file too. Pick it in box 2b;
-   you do not have to tick SoulSilver. Without it, Platinum builds fine, just without following Pokemon.
-3. Press **Browse** and pick your `.nds` file. A **green tick** means it is the right one. A red cross tells you what is wrong.
-   Or tick **Look for my game files automatically** (off by default): the builder looks in Downloads, Desktop and Documents and fills in
-   a file only if it is the right game. It only reads the file.
-4. **Output folder** (box 3): the finished `.cia` and `.3dsx` are always saved here, in `Platinum\`, `SoulSilver\` and `HeartGold\`,
-   with a `How to put this on your 3DS.txt`. Default: `Documents\Pokemon 3DS Builds`. **Open game folder** opens it.
-5. Put your 3DS SD card in the computer and press **Find it**. (You can skip this; then the files are just saved on the PC.)
-6. Press the big green **Build my game and put it on the SD card**. Before it starts, it warns you about low disk space or no internet. If WSL/Ubuntu is missing
-   (or only half installed), a **One-time setup** box lists the steps: click Yes, restart when asked, the builder reopens, press the button again.
-7. Wait. **The first build takes an hour or more.** Later builds are quick. The bar shows overall progress, and a line under it shows how long
-   it has been running and the latest output, so you can tell it is still working. The log says what is still needed and what is already installed,
-   so a half-finished install carries on where it stopped.
-8. When it says **Installed!**, put the SD card back in the 3DS, open the **Homebrew Launcher** and start **Platinum 3DS**.
-   For a HOME Menu icon, open **FBI** > SD > `cias` > `platinum3ds.cia` > Install.
-
-### Updating (you already have it installed)
-
-- Press the blue **Update** button. It does **not** update the builder itself: it downloads the newest **game code** (the Platinum/SoulSilver projects) from GitHub, shows what's new
-  (or "Already up to date"), rebuilds and copies to the SD card the same way as **Build my game and put it on the SD card**.
-  Your game files, the build cache and your save are never touched; the save is backed up before every copy.
-- Every build makes sure each project points at the right GitHub repo and branch (main), fixing it if needed (your game
-  files and saves are never touched). Right before copying it checks GitHub again; if new code was pushed during the build it
-  updates and does a quick rebuild (up to 2 times). The done message and `How to put this on your 3DS.txt` show the
-  exact version built (commit and date).
-- **Build my game and put it on the SD card** also checks GitHub for game updates each time. To stop that, tick **Advanced > Offline**.
-- If the window says **"A newer builder is available"**, click it and download the new `Pokemon3DSBuilder.exe`.
-- Your own edits to a project folder are kept with `git stash` before an update (power users: `git stash list`).
+The build button also checks for new game code. **Advanced → Offline** skips that check, and **Advanced → Update and build** checks even when Offline is selected. If a newer builder is available, the window links to the download.
 
 ### Cleaning up
 
@@ -86,8 +55,7 @@ If you skipped the SD card, copy the files into those folders yourself.
 |---|---|
 | "cannot see SD card F:" (v1.0.7 and older) | Use v1.0.8 or newer: it copies to the SD card from Windows itself. |
 | "Windows protected your PC" (blue SmartScreen box) | Normal for a new download. Press **More info**, then **Run anyway**. |
-| "No module named 'ndspy'" or "built without following Pokemon" | Advanced > **Reinstall build tools**, then press **Build my game and put it on the SD card** again. Platinum still installs without following Pokemon either way. |
-| "The Platinum project is not public yet" | Not your fault. Wait for the public release, then press the button again. |
+| "No module named 'ndspy'" or "built without following Pokemon" | Advanced > **Check and repair tools**, then press the build button again. Platinum still installs without following Pokemon either way. |
 | Red cross: "another region" / "Rev 0" / "trimmed" / "has been changed" | You need an untouched US Rev 1 dump, 128 MB. Dump your cartridge again (for example with GodMode9). |
 | "WSL cannot start" / "virtualization is not enabled" / restart loop | Windows cannot run WSL2. The builder explains this and offers **Turn on** for the two Windows settings it needs (Virtual Machine Platform and the hypervisor); then restart once. Common on PCs set up for VirtualBox or VMware (update them afterwards if they complain). If it still fails, turn on Virtualization (Intel VT-x / AMD SVM) in the PC's BIOS/UEFI. Advanced > **Check setup** shows a plain report of this PC. |
 | Asked to install WSL again and again | Update to v1.1.5 or newer. The builder installs WSL at most once and starts nothing at boot. Advanced > **Clean up boot entries** removes anything older versions left behind. |
