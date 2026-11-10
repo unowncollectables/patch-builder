@@ -95,6 +95,11 @@ HINTS = [
 ]
 
 
+# Log lines that mean the saved build tree is stale (an old copy of a file was reused): the clean button lights up.
+STALE_RE = re.compile(r"still holds a raw|undefined reference|No rule to make target|"
+                      r"file format not recognized|multiple definition", re.I)
+
+
 def sq(s):
     return "'" + str(s).replace("'", "'\\''") + "'"
 
@@ -914,13 +919,36 @@ def run_gui():
                    activebackground="#3aa05c", activeforeground="white", relief="flat", padx=20, pady=10,
                    cursor="hand2", command=lambda: start("auto"))
     go.pack(fill="x", pady=(4, 2))
-    ttk.Label(outer, text="Green: the normal button. Builds what you ticked and copies it to the SD card. "
-              "Blue: the same, but always downloads the newest game code first.",
-              foreground=MUTED, wraplength=720).pack(anchor="w", pady=(0, 6))
     upd = tk.Button(outer, text="Get the newest game updates from GitHub, then rebuild and copy",
                     font=(big[0], 12, "bold"), bg=BLUE, fg="white", activebackground="#3a7fc8", activeforeground="white",
                     relief="flat", padx=16, pady=6, cursor="hand2", command=lambda: start("update"))
-    upd.pack(fill="x", pady=(0, 8))
+    upd.pack(fill="x", pady=(0, 6))
+    AMBER, AMBER_HOT = "#b9770e", "#ffb020"
+    clean_btn = tk.Button(outer, text="Clean build tree  (fixes odd, stuck or out-of-date builds)", font=(big[0], 12, "bold"),
+                          bg=AMBER, fg="white", activebackground=AMBER_HOT, activeforeground="black", relief="flat",
+                          padx=16, pady=6, cursor="hand2", command=lambda: start("cleantree"))
+    clean_btn.pack(fill="x", pady=(0, 4))
+    ttk.Label(outer, text="Green: the normal button, builds what you ticked and copies it to the SD card. "
+              "Blue: the same, but downloads the newest game code first. "
+              "Amber: deletes the temporary build folder (saves, game files and SD card are kept) so the next build starts fresh.",
+              foreground=MUTED, wraplength=720).pack(anchor="w", pady=(0, 4))
+    clean_hint = tk.Label(outer, text="", bg=BG, fg=AMBER_HOT, font=(big[0], 11, "bold"), wraplength=720, justify="left", anchor="w")
+    clean_hint.pack(fill="x", pady=(0, 4))
+    clean = {"need": False, "on": False}
+
+    def set_clean_need(need, why=""):
+        """Light the clean button up (and make it blink) when a clean build looks like the fix."""
+        clean["need"] = need
+        clean_hint.configure(text=why if need else "")
+        if not need:
+            clean_btn.configure(bg=AMBER, fg="white")
+
+    def blink_clean():
+        if clean["need"] and not st["busy"]:
+            clean["on"] = not clean["on"]
+            clean_btn.configure(bg=AMBER_HOT if clean["on"] else AMBER, fg="black" if clean["on"] else "white")
+        root.after(600, blink_clean)
+    root.after(600, blink_clean)
     newer_lbl = tk.Label(outer, text="", fg="#7db7ff", bg=BG, cursor="hand2", font=(big[0], 11, "bold", "underline"))
 
     def check_newer():
@@ -1143,6 +1171,7 @@ def run_gui():
             x.configure(state="disabled" if b else "normal")
         go.configure(state="disabled" if b else "normal", bg=GREEN_DIM if b else GREEN)
         upd.configure(state="disabled" if b else "normal", bg=BLUE_DIM if b else BLUE)
+        clean_btn.configure(state="disabled" if b else "normal", bg="#6b5a3a" if b else AMBER, fg="white")
         cancel_btn.configure(state="normal" if b else "disabled")
 
     def cancel():
@@ -1509,7 +1538,13 @@ def run_gui():
             pct_var.set("Stopped at %d%%. Read the red box below; 'Copy details for help' sends it to me." % int(anim["shown"]))
             show_banner(False, explain(text, st["hint"], st["failed"]))
             toggle("details", True)
+            if pipe != "cleantree" and (st["failed"] in ("build", "link", "full", "relink", "patches", "cia") or STALE_RE.search(text)):
+                set_clean_need(True, "The last build failed while compiling. If it fails again, press the amber button: "
+                                     "a clean rebuild fixes most odd or out-of-date builds (it takes longer).")
             return
+        set_clean_need(False)
+        if "still holds a raw" in text and pipe != "cleantree":
+            set_clean_need(True, "The build finished but warned about old build files. Press the amber button, then build again.")
         set_target(100)
         bar_color("#4caf6a")
         pct_var.set("Done!  100%")
