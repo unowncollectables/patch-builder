@@ -10,7 +10,7 @@ Package as an .exe with build_exe.bat (PyInstaller). Standard library only.
 """
 import hashlib, json, os, re, string, subprocess, sys, threading, queue, time, urllib.request, webbrowser
 
-VERSION = "1.3.15"   # bump before tagging a release; compared with the newest GitHub release
+VERSION = "1.3.16"   # bump before tagging a release; compared with the newest GitHub release
 RELEASES_API = "https://api.github.com/repos/unowncollectables/patch-builder/releases/latest"
 RELEASES_PAGE = "https://github.com/unowncollectables/patch-builder/releases/latest"
 
@@ -827,9 +827,10 @@ def run_gui():
           "plan_w": 1, "step_name": "", "done_w": 0, "cur": "", "t0": 0, "t_step": 0, "last": ""}
     activity = tk.StringVar(value="")
 
-    BG, PANEL, FG = "#f5f5f7", "#ffffff", "#1d1d1f"
-    GOOD, BAD, MUTED = "#17663b", "#a62828", "#55555b"
-    BORDER, ACCENT = "#d4d4da", "#0066cc"
+    BG, PANEL, FG = "#191c22", "#252a33", "#f1f4fa"
+    GOOD, BAD, MUTED = "#92e5af", "#ffafb8", "#aeb8c8"
+    BORDER, ACCENT = "#404857", "#286cdb"
+    ON_ACCENT, LINK_COLOR = "#ffffff", "#91b9ff"
     big = ("Segoe UI", 10) if IS_WIN else ("TkDefaultFont", 10)
     head = (big[0], 17, "bold")
     style = ttk.Style()
@@ -838,17 +839,35 @@ def run_gui():
     except tk.TclError:
         pass
     root.configure(bg=BG)
+    if IS_WIN:
+        def match_title_bar():
+            import ctypes
+            from ctypes import wintypes
+            get_ancestor = ctypes.windll.user32.GetAncestor
+            get_ancestor.argtypes = (wintypes.HWND, wintypes.UINT)
+            get_ancestor.restype = wintypes.HWND
+            hwnd = get_ancestor(root.winfo_id(), 2)  # GA_ROOT gets Tk's native window frame.
+            set_attribute = ctypes.windll.dwmapi.DwmSetWindowAttribute
+            set_attribute.argtypes = (wintypes.HWND, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD)
+            for attribute, color in ((35, BG), (36, FG)):  # Windows 11 caption and caption text colors.
+                rgb = bytes.fromhex(color[1:])
+                value = wintypes.DWORD(int.from_bytes(rgb, "little"))
+                set_attribute(hwnd, attribute, ctypes.byref(value), ctypes.sizeof(value))
+
+        root.after_idle(match_title_bar)
     style.configure(".", font=big, background=BG, foreground=FG, fieldbackground=PANEL, bordercolor=BORDER,
-                    lightcolor=BORDER, darkcolor=BORDER, troughcolor="#e5e5eb", insertcolor=FG)
+                    lightcolor=BORDER, darkcolor=BORDER, troughcolor="#212631", insertcolor=FG)
     style.configure("TButton", background=PANEL, width=0, padding=(10, 4))
-    style.map("TButton", background=[("disabled", BG), ("active", "#ececf1")], foreground=[("disabled", MUTED)])
-    style.configure("Primary.TButton", background=ACCENT, foreground=PANEL, font=(big[0], 12, "bold"),
+    style.map("TButton", background=[("disabled", BG), ("active", "#333b49")], foreground=[("disabled", MUTED)])
+    style.configure("Primary.TButton", background=ACCENT, foreground=ON_ACCENT, font=(big[0], 12, "bold"),
                     bordercolor=ACCENT, lightcolor=ACCENT, darkcolor=ACCENT, padding=(12, 8))
-    style.map("Primary.TButton", background=[("disabled", "#e2e2e8"), ("active", "#0056b3")],
+    style.map("Primary.TButton", background=[("disabled", "#2c3544"), ("active", "#205ec4")],
               foreground=[("disabled", MUTED)])
     style.configure("TCheckbutton", background=BG, foreground=FG)
     style.map("TCheckbutton", background=[("active", BG)], indicatorcolor=[("selected", ACCENT), ("!selected", PANEL)])
-    style.configure("TEntry", fieldbackground=PANEL, foreground=FG, padding=3)
+    style.configure("TEntry", fieldbackground=PANEL, foreground=FG, padding=3,
+                    selectbackground=ACCENT, selectforeground=ON_ACCENT)
+    style.configure("Vertical.TScrollbar", background=PANEL, arrowcolor=MUTED)
     style.configure("TSeparator", background=BORDER)
     style.configure("Step.TLabel", font=(big[0], 11, "bold"))
 
@@ -995,7 +1014,7 @@ def run_gui():
     go = ttk.Button(footer, text="", style="Primary.TButton", command=lambda: start("auto"))
     go.pack(fill="x")
 
-    newer_lbl = tk.Label(outer, text="", fg=ACCENT, bg=BG, cursor="hand2", font=(big[0], 10, "bold", "underline"))
+    newer_lbl = tk.Label(outer, text="", fg=LINK_COLOR, bg=BG, cursor="hand2", font=(big[0], 10, "bold", "underline"))
 
     def check_newer():
         r = newer_release()
@@ -1003,7 +1022,7 @@ def run_gui():
             q.put(("newer", r[0], r[1]))
     threading.Thread(target=check_newer, daemon=True).start()
 
-    style.configure("Game.Horizontal.TProgressbar", thickness=6, background=ACCENT, troughcolor="#e5e5eb",
+    style.configure("Game.Horizontal.TProgressbar", thickness=6, background=ACCENT, troughcolor="#212631",
                     lightcolor=ACCENT, darkcolor=ACCENT)
     pct_var = tk.StringVar(value="")
     progress = ttk.Frame(footer)
@@ -1173,7 +1192,7 @@ def run_gui():
         log.configure(state="disabled")
 
     def show_banner(ok, text, folder="", recovery=None):
-        banner.configure(text=text, bg="#eaf5ee" if ok else "#fff0ef", fg=GOOD if ok else BAD)
+        banner.configure(text=text, bg="#163329" if ok else "#3b232c", fg=GOOD if ok else BAD)
         banner.pack(fill="x", pady=(3, 0), before=go)
         brow.pack(fill="x", pady=(3, 3), before=go)
         if folder:
@@ -1639,7 +1658,7 @@ def run_gui():
             return
         if not ok:
             status.set("Stopped.")
-            bar_color("#d9534f")
+            bar_color(BAD)
             pct_var.set("Stopped at %d%%. Read the red box below, then press 'Copy details for help' to share it." % int(anim["shown"]))
             failed = st["failed"]
             msg = explain(text, st["hint"], failed)
@@ -1653,7 +1672,7 @@ def run_gui():
             toggle("details", True)
             return
         set_target(100)
-        bar_color("#4caf6a")
+        bar_color(GOOD)
         pct_var.set("Done!  100%")
         status.set("Done.")
         if pipe in ("check", "test", "install", "clean", "cleantree"):
