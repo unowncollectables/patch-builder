@@ -27,7 +27,7 @@ No game files are in this repo or in the download. Everything happens on your co
 4. Click **Build and install to SD** or **Build and save to PC**. If Windows needs to install WSL, follow the prompts, then reopen the builder after restarting. Your selections are saved.
 5. Open the finished game in Homebrew Launcher on your New 3DS. If you made a HOME Menu installer, use FBI to install its `.cia` from the card’s `cias` folder.
 
-The first build can take an hour or more. Finished files also go to **Documents → Pokemon 3DS Builds** by default. Use **Open output folder** to find the files and instructions. **Advanced** has the output location, HOME Menu installer toggle, manual game selection, and the optional SoulSilver file for Platinum followers.
+The first build can take an hour or more. Finished files also go to **Documents → Pokemon 3DS Builds** by default. Use **Open output folder** to find the files and instructions. **Build options** shows the output location and HOME Menu installer toggle. **Advanced** has manual game selection, maintenance tools, and the optional SoulSilver file for Platinum followers.
 
 The build button also checks for new game code. **Advanced → Offline** skips that check, and **Advanced → Update and build** checks even when Offline is selected. If a newer builder is available, the window links to the download.
 
