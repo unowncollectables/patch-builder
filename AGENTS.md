@@ -23,6 +23,7 @@ what to do (`##HINT:` lines from the scripts, `HINTS` in `p3ds_builder.py`).
 **Script protocol (GUI <-> scripts):** one call runs steps in order; each prints `##STEP:<name>:START|OK|FAIL`; `##NEED:<step>`
 (from `needs`), `##HINT:<sentence>`, `##PROJECT:<folder>`, `##INSTALLED:<sd folder>`, `##DONE:OK|FAIL`. Settings arrive as env vars
 (`P3DS_ROOT`, `P3DS_PLATINUM`, `P3DS_SOULSILVER`, `P3DS_SD`, `P3DS_CIA=1`). Exit code 3 from `p3ds_get.sh` means git is missing.
+HeartGold is prepared but not buildable: `FUTURE_GAMES` (p3ds_builder.py) holds its ROM code/SHA1/SD folder and `rom_report(..., "heartgold")` recognises it. Turning it on = move it into `GAMES` + an `hg_build.sh` once the port exists (waits for Nathan's go).
 Adding a game = a new entry in `GAMES` (p3ds_builder.py), a `<game>_build.sh` using the same protocol, and a `plan_for` branch.
 
 **SD layout it writes:** `3ds/<game>3ds/` with the `.3dsx`, the user's `.nds`, `save_backups/`; `.cia` files in `cias/`.
