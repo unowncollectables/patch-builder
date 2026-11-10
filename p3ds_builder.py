@@ -10,7 +10,7 @@ Package as an .exe with build_exe.bat (PyInstaller). Standard library only.
 """
 import hashlib, json, os, re, string, subprocess, sys, threading, queue, time, urllib.request, webbrowser
 
-VERSION = "1.3.11"   # bump before tagging a release; compared with the newest GitHub release
+VERSION = "1.3.12"   # bump before tagging a release; compared with the newest GitHub release
 RELEASES_API = "https://api.github.com/repos/unowncollectables/patch-builder/releases/latest"
 RELEASES_PAGE = "https://github.com/unowncollectables/patch-builder/releases/latest"
 
@@ -541,6 +541,16 @@ def find_nds(want):
     return ""
 
 
+def identify_game_file(path):
+    """Recognize the game from its DS header. Region and dump checks happen separately."""
+    with open(path, "rb") as f:
+        f.seek(12)
+        code = f.read(4)
+    if len(code) == 4:
+        return {b"CPU": "platinum", b"IPG": "soulsilver", b"IPK": "heartgold"}.get(code[:3])
+    return None
+
+
 def rom_report(path, want="platinum", *, for_followers=False):
     """(ok, message) for a picked .nds. Mirrors rom_problem in p3ds_build.sh."""
     if not path:
@@ -629,7 +639,7 @@ def find_sd_cards():
 
 def sd_report(path):
     if not path:
-        return None, "Optional. Without it, the game is still saved in the folder above."
+        return None, "Optional. Leave this empty to save the game to your PC."
     if not os.path.isdir(path):
         return False, "Folder not found. Is the SD card plugged in?"
     if os.path.isdir(os.path.join(path, "Nintendo 3DS")):
@@ -735,6 +745,15 @@ def save_settings(d):
 
 def selected_games(c):
     return [g for g, k in (("platinum", "want_plat"), ("soulsilver", "want_ss"), ("heartgold", "want_hg")) if c.get(k)]
+
+
+def chosen_roms(c):
+    """Files required for the selected games, plus Platinum's optional SoulSilver file."""
+    games = selected_games(c)
+    checks = [(c[g], g, False) for g in games]
+    if "platinum" in games and "soulsilver" not in games and c.get("soulsilver"):
+        checks.append((c["soulsilver"], "soulsilver", True))
+    return checks
 
 
 def plan_for(game, pipe, c, needs=None):
@@ -875,8 +894,8 @@ def run_gui():
         stripe.configure(bg=a)
         stripe_r.configure(bg=b)
         hdr_title.configure(fg=b if k != "both" else a)
-        hdr_sub.configure(text="Building: " + name if k != "none" else "Tick a game below to start")
-    ttk.Label(outer, text="Choose a game and its .nds file. Add an SD card if you want the builder to copy the game to it.",
+        hdr_sub.configure(text="Selected: " + name if k != "none" else "Choose a game file to start")
+    ttk.Label(outer, text="Pick your .nds file, then press Build. An SD card is optional.",
               foreground=MUTED, wraplength=WRAP).pack(anchor="w", pady=(0, 10))
 
     checks = {}
@@ -908,17 +927,49 @@ def run_gui():
         return row
 
     ttk.Separator(outer).pack(fill="x", pady=(0, 8))
-    ttk.Label(outer, text="Choose your game", style="Step.TLabel").pack(anchor="w")
-    grow = ttk.Frame(outer)
-    grow.pack(fill="x", pady=(2, 10))
-    ttk.Checkbutton(grow, text="Pokemon Platinum", variable=want_plat).pack(side="left", padx=(0, 18))
-    ttk.Checkbutton(grow, text="Pokemon SoulSilver", variable=want_ss).pack(side="left", padx=(0, 18))
-    ttk.Checkbutton(grow, text="Pokemon HeartGold (experimental)", variable=want_hg).pack(side="left")
+    def choose_games():
+        files = filedialog.askopenfilenames(title="Choose your Pokemon game files", filetypes=[("DS game files", "*.nds")])
+        if not files:
+            return
+        selected = {}
+        skipped = []
+        for path in files:
+            try:
+                game = identify_game_file(path)
+            except OSError:
+                skipped.append("%s could not be opened." % os.path.basename(path))
+                continue
+            if not game:
+                skipped.append("%s is not a supported Pokemon game." % os.path.basename(path))
+            elif game in selected:
+                skipped.append("Only one %s file can be used. Skipped %s." % (GAMES[game]["name"], os.path.basename(path)))
+            else:
+                selected[game] = path
+        for game, path in selected.items():
+            vars_[game].set(os.path.normpath(path) if IS_WIN else path)
+            game_choices[game].set(True)
+        if skipped:
+            file_note.configure(text="\n".join(skipped))
+            file_note.pack(anchor="w", before=games_area, pady=(0, 6))
+        else:
+            file_note.pack_forget()
+
+    def remove_game(game):
+        vars_[game].set("")
+        game_choices[game].set(False)
+
+    game_choices = dict(wants)
+    choose_btn = ttk.Button(outer, text="Choose game files…", command=choose_games)
+    choose_btn.pack(anchor="w", pady=(0, 4))
+    file_note = ttk.Label(outer, text="", foreground=BAD, wraplength=WRAP)
     games_area = ttk.Frame(outer)
     games_area.pack(fill="x")
-    field(games_area, "platinum", "Platinum game file (.nds, US Rev 1)", "file")
-    field(games_area, "soulsilver", "SoulSilver game file (.nds, US)", "file")
-    field(games_area, "heartgold", "HeartGold game file (.nds, US)", "file")
+    for key, title in (("platinum", "Platinum game file (.nds, US Rev 1)"),
+                       ("soulsilver", "SoulSilver game file (.nds, US)"),
+                       ("heartgold", "HeartGold game file (.nds, US, experimental)")):
+        row = field(games_area, key, title, "file", "Replace…")
+        ttk.Button(row, text="Remove", command=lambda g=key: remove_game(g)).pack(side="left", padx=(6, 0))
+
     def do_autofind(*_):
         if not autofind.get():
             return
@@ -927,10 +978,7 @@ def run_gui():
                 f = find_nds(g)
                 if f:
                     vars_[g].set(os.path.normpath(f) if IS_WIN else f)
-    ttk.Checkbutton(games_area, text="Look for my game files automatically (Downloads, Desktop, Documents)",
-                    variable=autofind, command=do_autofind).pack(anchor="w", pady=(0, 6))
-    follow_note = ttk.Label(games_area, text="", foreground=MUTED, wraplength=WRAP)
-    field(outer, "out", "Save finished files to", "dir")
+
     sd_row = field(outer, "sd", "Copy to a 3DS SD card (optional)", "dir")
 
     def find_sd():
@@ -945,7 +993,8 @@ def run_gui():
                                            "or use Browse.")
     ttk.Button(sd_row, text="Find SD card", command=find_sd).pack(side="left", padx=(6, 0))
     ttk.Button(sd_row, text="Clear", command=lambda: vars_["sd"].set("")).pack(side="left", padx=(6, 0))
-    ttk.Checkbutton(outer, text="Also make a HOME Menu installer (.cia)", variable=want_cia).pack(anchor="w", pady=(0, 6))
+    destination = ttk.Label(outer, text="", foreground=MUTED, wraplength=WRAP)
+    destination.pack(anchor="w", pady=(0, 6))
 
     ttk.Separator(outer).pack(fill="x", pady=(6, 8))
     go = tk.Button(outer, text="", font=(big[0], 15, "bold"), bg=GREEN, fg="white",
@@ -1035,6 +1084,25 @@ def run_gui():
     adv_btn.pack(side="left", padx=(6, 0))
 
     adv = ttk.Frame(folds, padding=(0, 8, 0, 0))
+    ttk.Label(adv, text="Build options", style="Step.TLabel").pack(anchor="w")
+    choices = ttk.Frame(adv)
+    choices.pack(fill="x", pady=(2, 6))
+    for game, var in wants:
+        ttk.Checkbutton(choices, text=GAMES[game]["name"], variable=var).pack(side="left", padx=(0, 12))
+    ttk.Checkbutton(adv, text="Look for files in Downloads, Desktop and Documents",
+                    variable=autofind, command=do_autofind).pack(anchor="w", pady=(0, 6))
+
+    def pick_followers():
+        path = filedialog.askopenfilename(title="Choose SoulSilver for Platinum's following Pokemon",
+                                          filetypes=[("DS game files", "*.nds")])
+        if path:
+            vars_["soulsilver"].set(os.path.normpath(path) if IS_WIN else path)
+
+    followers_btn = ttk.Button(adv, text="Add SoulSilver for Platinum followers…", command=pick_followers)
+    followers_btn.pack(anchor="w", pady=(0, 8))
+    field(adv, "out", "Save finished files to", "dir")
+    ttk.Checkbutton(adv, text="Also make a HOME Menu installer (.cia)", variable=want_cia).pack(anchor="w", pady=(0, 8))
+    ttk.Separator(adv).pack(fill="x", pady=(0, 8))
     ttk.Label(adv, text="Project folders: leave empty and the builder downloads them for you (into your Linux/WSL home).",
               foreground=MUTED, wraplength=WRAP).pack(anchor="w", pady=(0, 6))
     field(adv, "repo", "Platinum project folder (3ds-platinum)", "dir")
@@ -1144,23 +1212,34 @@ def run_gui():
             q.put(("recheck", check, result))
         threading.Thread(target=work, daemon=True).start()
 
+    def update_build_button():
+        c = current_cfg()
+        checks_needed = chosen_roms(c)
+        enabled = False
+        if not checks_needed or any(not path for path, _, _ in checks_needed):
+            label = "Choose game files first"
+        elif any(check not in rom_cache for check in checks_needed):
+            label = "Checking game files…"
+        elif any(not rom_cache[check][0] for check in checks_needed):
+            label = "Replace or remove the invalid file"
+        else:
+            label = "Build and install to SD" if c["sd"] else "Build and save to PC"
+            enabled = not st["busy"]
+        go.configure(text=label, state="normal" if enabled else "disabled", bg=GREEN if enabled else GREEN_DIM)
+
     def refresh(*_):
-        # a game's boxes only show while its tick is on (the Platinum box also takes SoulSilver's ROM for following Pokemon)
-        follow_note.pack_forget()
-        go.configure(text="Build and install to SD" if vars_["sd"].get().strip().strip('"') else "Build and save to PC")
         apply_theme()
         for key, var in wants:
-            # the SoulSilver box also shows for Platinum alone: that file is what adds following Pokemon
-            if var.get() or (key == "soulsilver" and want_plat.get()):
+            # A saved SoulSilver file can also be used for Platinum's optional followers.
+            if var.get() or (key == "soulsilver" and want_plat.get() and vars_[key].get().strip()):
                 boxes[key].pack(fill="x", pady=(0, 10))
+                check_rom(key)
             else:
                 boxes[key].pack_forget()
-        if want_plat.get() and not want_ss.get():
-            follow_note.configure(text="Optional for Platinum: a SoulSilver file adds following Pokemon.")
-            follow_note.pack(anchor="w", pady=(0, 10))
-        check_rom("platinum")
-        check_rom("soulsilver")
-        check_rom("heartgold")
+        followers_btn.configure(state="normal" if want_plat.get() and not want_ss.get() else "disabled")
+        c = current_cfg()
+        destination.configure(text="Files save to %s%s" % (c["out"], " • HOME Menu installer included" if c["cia"] else ""))
+        update_build_button()
         set_check("sd", *sd_report(vars_["sd"].get().strip().strip('"')))
         set_check("repo", *project_report(vars_["repo"].get().strip().strip('"'), "platinum"))
         set_check("ssrepo", *project_report(vars_["ssrepo"].get().strip().strip('"'), "soulsilver"))
@@ -1170,6 +1249,7 @@ def run_gui():
     want_plat.trace_add("write", refresh)
     want_ss.trace_add("write", refresh)
     want_hg.trace_add("write", refresh)
+    want_cia.trace_add("write", refresh)
 
     # ---- running -------------------------------------------------------------------------------------
     def current_cfg():
@@ -1185,7 +1265,8 @@ def run_gui():
         st["busy"] = b
         for x in adv_buttons:
             x.configure(state="disabled" if b else "normal")
-        go.configure(state="disabled" if b else "normal", bg=GREEN_DIM if b else GREEN)
+        choose_btn.configure(state="disabled" if b else "normal")
+        update_build_button()
         cancel_btn.configure(state="normal" if b else "disabled")
 
     def cancel():
@@ -1430,19 +1511,13 @@ def run_gui():
                 messagebox.showwarning("Project folder", "The %s project folder is not right.\n\n%s" % (GAMES[g]["name"], rmsg))
                 return
         if pipe in ("auto", "full"):
-            for g in games:
-                if not c[g]:
-                    messagebox.showwarning("Game file", "Pick your Pokemon %s .nds file first." % GAMES[g]["name"])
+            for path, game, followers in chosen_roms(c):
+                if not path:
+                    messagebox.showwarning("Game file", "Choose your %s .nds file first." % GAMES[game]["name"])
                     return
-                ok, text = rom_cache.get((c[g], g, False)) or rom_report(c[g], g)
+                ok, text = rom_cache.get((path, game, followers)) or rom_report(path, game, for_followers=followers)
                 if ok is False:
-                    messagebox.showwarning("%s file" % GAMES[g]["name"], text)
-                    return
-            if "platinum" in games and c["soulsilver"] and "soulsilver" not in games:
-                ok, text = rom_cache.get((c["soulsilver"], "soulsilver", True)) or rom_report(
-                    c["soulsilver"], "soulsilver", for_followers=True)
-                if ok is False:
-                    messagebox.showwarning("SoulSilver file", text + "\n\nClear that box to build without following Pokemon.")
+                    messagebox.showwarning("%s file" % GAMES[game]["name"], text)
                     return
         if pipe in ("auto", "full", "quick") and c["sd"]:
             ok, text = sd_report(c["sd"])
@@ -1657,6 +1732,7 @@ def run_gui():
                     rom_pending.discard(a)
                     rom_cache[a] = b
                     check_rom(a[1])
+                    update_build_button()
                 elif kind == "done":
                     finish(a, b)
         except queue.Empty:
@@ -1675,6 +1751,8 @@ def run_gui():
     if IS_WIN:      # older versions registered a resume-at-boot entry: remove any leftovers, silently
         threading.Thread(target=clean_boot_entries, daemon=True).start()
     refresh()
+    if autofind.get() and any(var.get() and not vars_[game].get() for game, var in wants):
+        root.after(0, do_autofind)
     pump()
     tick()
     animate()
