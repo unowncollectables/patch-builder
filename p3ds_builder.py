@@ -10,7 +10,7 @@ Package as an .exe with build_exe.bat (PyInstaller). Standard library only.
 """
 import hashlib, json, os, re, string, subprocess, sys, threading, queue, time, urllib.request, webbrowser
 
-VERSION = "1.3.16"   # bump before tagging a release; compared with the newest GitHub release
+VERSION = "1.3.17"   # bump before tagging a release; compared with the newest GitHub release
 RELEASES_API = "https://api.github.com/repos/unowncollectables/patch-builder/releases/latest"
 RELEASES_PAGE = "https://github.com/unowncollectables/patch-builder/releases/latest"
 
@@ -286,18 +286,121 @@ def sd_copy(game, out_dir, sd, rom, log=print, *, include_cia=True):
     return True, "", d
 
 
+def update_asset(release):
+    """Return the published Windows asset and its SHA-256 for this repository."""
+    tag = release.get("tag_name", "")
+    if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag):
+        return None
+    url = RELEASES_PAGE.removesuffix("/latest") + "/download/" + tag + "/Pokemon3DSBuilder.exe"
+    for asset in release.get("assets", []):
+        digest, size = asset.get("digest") or "", asset.get("size")
+        if (asset.get("browser_download_url") == url and asset.get("state") == "uploaded"
+                and re.fullmatch(r"sha256:[0-9a-f]{64}", digest)
+                and type(size) is int and 0 < size <= 100 * 1024 * 1024):
+            return url, digest[7:], size
+    return None
+
+
 def newer_release():
-    """(tag, url) of a newer builder release on GitHub, or None (also None when offline or on any error)."""
+    """Return the latest stable release metadata if it is newer than this builder."""
     try:
         with urllib.request.urlopen(urllib.request.Request(RELEASES_API, headers={"User-Agent": "p3ds-builder"}), timeout=8) as r:
-            d = json.load(r)
-        tag = d.get("tag_name", "")
-        ver = lambda t: tuple(int(x) for x in re.findall(r"\d+", t))
-        if tag and ver(tag) > ver(VERSION):
-            return tag, d.get("html_url") or RELEASES_PAGE
-    except Exception:
+            release = json.load(r)
+        tag = release.get("tag_name", "")
+        if not release.get("draft") and not release.get("prerelease") and re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag):
+            version = tuple(map(int, tag[1:].split(".")))
+            if version > tuple(map(int, VERSION.split("."))):
+                return release
+    except (OSError, ValueError):
         pass
     return None
+
+
+def stage_update(asset, executable):
+    """Download beside the executable so Windows can replace it on the same volume."""
+    import tempfile
+    from pathlib import Path
+
+    url, expected_digest, expected_size = asset
+    deadline = time.monotonic() + 120
+    digest = hashlib.sha256()
+    size = 0
+    output = tempfile.NamedTemporaryFile(prefix=".p3ds-update-", suffix=".exe", delete=False,
+                                         dir=Path(executable).parent)
+    staged = Path(output.name)
+    try:
+        with output:
+            req = urllib.request.Request(url, headers={"User-Agent": "p3ds-builder"})
+            with urllib.request.urlopen(req, timeout=15) as response:
+                for chunk in iter(lambda: response.read(128 * 1024), b""):
+                    size += len(chunk)
+                    if size > expected_size or time.monotonic() > deadline:
+                        raise OSError("The update download exceeded its expected size or time limit.")
+                    digest.update(chunk)
+                    output.write(chunk)
+            if size != expected_size or digest.hexdigest() != expected_digest:
+                raise OSError("The downloaded update did not match GitHub's checksum.")
+    except BaseException:
+        staged.unlink(missing_ok=True)
+        raise
+    return staged
+
+
+# The helper waits for the app and its PyInstaller bootloader to release the file.
+# Windows paths are passed as environment variables so they are never parsed as PowerShell code.
+UPDATE_SCRIPT = r"""
+$ErrorActionPreference = 'Stop'
+$target = $env:P3DS_UPDATE_TARGET
+$staged = $env:P3DS_UPDATE_STAGED
+$backup = "$staged.previous.exe"
+$exited = $false
+$replaced = $false
+try {
+    $parent = Get-Process -Id ([int]$env:P3DS_UPDATE_PID) -ErrorAction SilentlyContinue
+    if ($parent -and !$parent.WaitForExit(30000)) {
+        throw 'The builder did not close in time.'
+    }
+    $exited = $true
+    for ($attempt = 0; ; $attempt++) {
+        try {
+            [IO.File]::Replace($staged, $target, $backup)
+            $replaced = $true
+            break
+        } catch [IO.IOException] {
+            if ($attempt -ge 39) { throw }
+            Start-Sleep -Milliseconds 250
+        }
+    }
+    Start-Process -FilePath $target -WorkingDirectory ([IO.Path]::GetDirectoryName($target))
+    Remove-Item -LiteralPath $backup -ErrorAction SilentlyContinue
+} catch {
+    $reason = $_.Exception.Message
+    $restart = $target
+    if ($replaced) {
+        try { [IO.File]::Replace($backup, $target, $staged) }
+        catch { $restart = $backup }
+    }
+    if ($exited) {
+        Start-Process -FilePath $restart -ErrorAction SilentlyContinue
+    }
+    Add-Type -AssemblyName PresentationFramework
+    [void][System.Windows.MessageBox]::Show(
+        "The builder could not install the update. $reason", 'Pokemon 3DS Builder')
+} finally {
+    Remove-Item -LiteralPath $staged -ErrorAction SilentlyContinue
+}
+"""
+
+
+def launch_update(staged, executable):
+    import base64
+
+    env = dict(os.environ, P3DS_UPDATE_STAGED=os.fspath(staged), P3DS_UPDATE_TARGET=os.fspath(executable),
+               P3DS_UPDATE_PID=str(os.getpid()), PYINSTALLER_RESET_ENVIRONMENT="1")
+    encoded = base64.b64encode(UPDATE_SCRIPT.encode("utf-16-le")).decode("ascii")
+    powershell = os.path.join(os.environ["SystemRoot"], "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+    subprocess.Popen([powershell, "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
+                     env=env, creationflags=NO_WINDOW)
 
 
 def cancel_command():
@@ -830,7 +933,7 @@ def run_gui():
     BG, PANEL, FG = "#191c22", "#252a33", "#f1f4fa"
     GOOD, BAD, MUTED = "#92e5af", "#ffafb8", "#aeb8c8"
     BORDER, ACCENT = "#404857", "#286cdb"
-    ON_ACCENT, LINK_COLOR = "#ffffff", "#91b9ff"
+    ON_ACCENT = "#ffffff"
     big = ("Segoe UI", 10) if IS_WIN else ("TkDefaultFont", 10)
     head = (big[0], 17, "bold")
     style = ttk.Style()
@@ -1014,12 +1117,10 @@ def run_gui():
     go = ttk.Button(footer, text="", style="Primary.TButton", command=lambda: start("auto"))
     go.pack(fill="x")
 
-    newer_lbl = tk.Label(outer, text="", fg=LINK_COLOR, bg=BG, cursor="hand2", font=(big[0], 10, "bold", "underline"))
-
     def check_newer():
-        r = newer_release()
-        if r:
-            q.put(("newer", r[0], r[1]))
+        release = newer_release()
+        if release:
+            q.put(("newer", release, None))
     threading.Thread(target=check_newer, daemon=True).start()
 
     style.configure("Game.Horizontal.TProgressbar", thickness=6, background=ACCENT, troughcolor="#212631",
@@ -1053,6 +1154,7 @@ def run_gui():
     toolbar = ttk.Frame(footer)
     toolbar.pack(fill="x", pady=(5, 0))
     cancel_btn = ttk.Button(toolbar, text="Cancel", command=lambda: cancel())
+    update_btn = ttk.Button(toolbar)
     ttk.Label(progress, textvariable=status, wraplength=495).pack(anchor="w")
 
     banner = tk.Label(footer, text="", font=(big[0], 10, "bold"), wraplength=490, justify="left", anchor="w", padx=8, pady=5)
@@ -1297,10 +1399,44 @@ def run_gui():
         update_build_button()
         if b:
             progress.pack(fill="x", before=toolbar, pady=(4, 0))
-            cancel_btn.pack(side="right")
+            update_btn.pack_forget()
+            if not st.get("updating"):
+                cancel_btn.pack(side="right")
         else:
             progress.pack_forget()
             cancel_btn.pack_forget()
+            if st.get("update"):
+                update_btn.pack(side="right")
+
+    def start_update(release):
+        if st["busy"]:
+            return
+        asset = update_asset(release) if IS_WIN and getattr(sys, "frozen", False) else None
+        if not asset:
+            webbrowser.open(RELEASES_PAGE)
+            return
+        st["updating"] = True
+        hide_banner()
+        set_busy(True)
+        pct_var.set("")
+        set_target(0, True)
+        activity.set("")
+        status.set("Downloading %s…" % release["tag_name"])
+
+        def download():
+            try:
+                staged = stage_update(asset, sys.executable)
+            except OSError as exc:
+                q.put(("update_error", str(exc), None))
+            else:
+                q.put(("update_ready", staged, None))
+
+        threading.Thread(target=download, daemon=True).start()
+
+    def update_failed(message):
+        st["updating"] = False
+        set_busy(False)
+        show_banner(False, "The update could not be installed. " + message)
 
     def cancel():
         st["cancel"] = True
@@ -1763,9 +1899,24 @@ def run_gui():
                         b.put(messagebox.askyesno("Clean up old builds", "These old files will be removed:\n\n" + shown_items +
                                                   "\n\nSaves, save backups, your game files, settings and the build cache are never removed. Remove them?"))
                 elif kind == "newer":
-                    newer_lbl.configure(text="A newer builder is available (%s, you have v%s). Click here to download it." % (a, VERSION))
-                    newer_lbl.bind("<Button-1>", lambda e, u=b: webbrowser.open(u))
-                    newer_lbl.pack(anchor="w", before=folds, pady=(0, 4))
+                    st["update"] = a
+                    can_install = IS_WIN and getattr(sys, "frozen", False) and update_asset(a)
+                    update_btn.configure(text="Update and restart" if can_install else "Get latest version",
+                                         command=lambda release=a: start_update(release))
+                    if not st["busy"]:
+                        update_btn.pack(side="right")
+                elif kind == "update_error":
+                    update_failed(a)
+                elif kind == "update_ready":
+                    save_settings(current_cfg())
+                    try:
+                        launch_update(a, sys.executable)
+                    except OSError as exc:
+                        a.unlink(missing_ok=True)
+                        update_failed(str(exc))
+                    else:
+                        root.destroy()
+                        return
                 elif kind == "project":
                     vars_[GAMES[a]["repo"]].set(b)
                 elif kind == "recheck":
@@ -1780,6 +1931,8 @@ def run_gui():
         root.after(100, pump)
 
     def on_close():
+        if st.get("updating"):
+            return
         if st["busy"]:
             if not messagebox.askyesno("Still building", "A build is running. Stop it and close?"):
                 return
