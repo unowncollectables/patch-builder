@@ -1,6 +1,6 @@
 # Pokemon 3DS Builder
 
-Turns **your own** Pokemon Platinum (or SoulSilver) cartridge dump into a game that runs natively on a **New Nintendo 3DS**.
+Turns **your own** Pokemon Platinum, SoulSilver or HeartGold cartridge dump into a game that runs natively on a **New Nintendo 3DS**.
 No game files are in this repo or in the download. Everything happens on your computer, with your file.
 
 > **Platinum status:** the Platinum project ([3ds-platinum](https://github.com/unowncollectables/3ds-platinum)) is **not public yet**.
@@ -38,7 +38,7 @@ No game files are in this repo or in the download. Everything happens on your co
 3. Press **Browse** and pick your `.nds` file. A **green tick** means it is the right one. A red cross tells you what is wrong.
    Or tick **Look for my game files automatically** (off by default): the builder looks in Downloads, Desktop and Documents and fills in
    a file only if it is the right game. It only reads the file.
-4. **Output folder** (box 3): the finished `.cia` and `.3dsx` are always saved here, in `Platinum\` and `SoulSilver\`,
+4. **Output folder** (box 3): the finished `.cia` and `.3dsx` are always saved here, in `Platinum\`, `SoulSilver\` and `HeartGold\`,
    with a `How to put this on your 3DS.txt`. Default: `Documents\Pokemon 3DS Builds`. **Open game folder** opens it.
 5. Put your 3DS SD card in the computer and press **Find it**. (You can skip this; then the files are just saved on the PC.)
 6. Press the big green **Build my game and put it on the SD card**. Before it starts, it warns you about low disk space or no internet. If WSL/Ubuntu is missing
@@ -103,6 +103,23 @@ If you skipped the SD card, copy the files into those folders yourself.
 SoulSilver works the same way: tick **Pokemon SoulSilver** and pick your US SoulSilver `.nds`.
 Giving a SoulSilver file while building Platinum also adds following Pokemon to Platinum.
 
+### HeartGold (experimental)
+
+Tick **Pokemon HeartGold** and pick your US HeartGold `.nds` in its own box. HeartGold is built from the SoulSilver project
+but is a completely separate game: its own download (`~/Pokemon-HeartGold-New3ds`), its own output folder (`HeartGold\`), its
+own SD folder and save, and its own HOME Menu icon (with Ho-Oh). Building or installing it never touches SoulSilver or its save,
+and you can have both installed. A SoulSilver file in the HeartGold box (or the other way round) gets a red cross.
+
+| File | Goes in |
+|---|---|
+| `heartgold3ds.3dsx` (Homebrew Launcher) | `SD:/3ds/heartgold3ds/` |
+| your game file (copied once, as `heartgold.nds`) | `SD:/3ds/heartgold3ds/` |
+| `heartgold3ds.cia` (HOME Menu installer) | `SD:/cias/` |
+| your save `heartgold.sav` | `SD:/3ds/heartgold3ds/` (never overwritten; backed up first) |
+
+**Experimental:** HeartGold compiles and packages, but it has not been played on a console yet. Expect surprises, and
+please report them.
+
 ## Make the exe yourself (optional)
 
 Install [Python 3](https://www.python.org/downloads/) (tick *Add python to PATH*) and double-click `build_exe.bat`.
@@ -115,7 +132,8 @@ Linux: `python3 p3ds_builder.py` (needs `python3-tk`). Without the window, per g
 ```sh
 P3DS_ROOT=~/3ds-platinum P3DS_PLATINUM=~/platinum.nds P3DS_SD=/media/me/SD [P3DS_CIA=1] bash p3ds_build.sh check | all | quick
 P3DS_ROOT=~/Pokemon-Soulsilver-New3ds P3DS_SOULSILVER=~/soulsilver.nds P3DS_SD=/media/me/SD [P3DS_CIA=1] bash ss_build.sh check | all | quick
-bash p3ds_get.sh platinum | soulsilver     # download the project into ~/3ds-platinum or ~/Pokemon-Soulsilver-New3ds
+P3DS_ROOT=~/Pokemon-HeartGold-New3ds P3DS_HEARTGOLD=~/heartgold.nds P3DS_SD=/media/me/SD [P3DS_CIA=1] bash hg_build.sh check | all | quick
+bash p3ds_get.sh platinum | soulsilver | heartgold   # download the project into ~/3ds-platinum, ~/Pokemon-Soulsilver-New3ds or ~/Pokemon-HeartGold-New3ds
 ```
 
 `p3ds_build.sh` steps: `check needs setup link stage pspoke full patches testpatches relink followers cia deploy`.
@@ -176,6 +194,11 @@ itself (Linux, virtual display) with a stand-in build script, including Cancel.
 SoulSilver and the two-game window (added later): the ROM checks, project finder, step plans, project download and the
 `ss_build.sh` check / needs / stage steps are tested. The new two-game window was driven headless (virtual display, stand-in build scripts) through download, needs, tool setup, both games' steps and the `.cia` option. **Not yet tested: the long SoulSilver compile through this builder, the real `.cia` steps for both games, and the Windows-only parts (WSL, drive detection, the `.exe`).** The commands it
 runs are the same ones the SoulSilver repo documents (`scripts/ss3ds_build.sh`, then `make` in `soulsilver3ds/full`).
+
+HeartGold (experimental): the ROM checks, the game list and the script's syntax are tested, and the commands `hg_build.sh`
+runs (`scripts/hg_build.sh`, then `make` and `make cia` in `heartgold3ds/full`) produced a `.3dsx` and a `.cia` in a Linux
+container. **Not yet tested: the window with the HeartGold box on a real screen, the build through this builder on
+Windows/WSL, and the game itself on a console.**
 
 ## For AI helpers
 
