@@ -18,8 +18,7 @@ case "$what" in
   platinum)   url=${P3DS_PLATINUM_URL:-https://github.com/unowncollectables/3ds-platinum};            def="$HOME/3ds-platinum";            marker=work_patches ;;
   soulsilver) url=https://github.com/unowncollectables/Pokemon-Soulsilver-New3ds; def="$HOME/Pokemon-Soulsilver-New3ds"; marker=pspoke-patches ;;
   heartgold)  url=https://github.com/unowncollectables/Pokemon-Soulsilver-New3ds; def="$HOME/Pokemon-HeartGold-New3ds"; marker=heartgold3ds
-              # While HeartGold is still being finished it lives on its own branch; it moves to main when it is merged.
-              br=${P3DS_HG_BRANCH:-claude/project-thread-wgcit8} ;;
+              br=${P3DS_HG_BRANCH:-main} ;;      # P3DS_HG_BRANCH: build HeartGold from another branch (testing)
   *) echo "usage: $0 platinum|soulsilver|heartgold|ensure-git" >&2; exit 2 ;;
 esac
 br=${br:-main}
@@ -35,7 +34,7 @@ elif [ -d "$dest/.git" ]; then
     echo "  [!]       $dest pointed at '${cur:-nothing}'; switching it to $url"
     git -C "$dest" remote remove origin 2>/dev/null; git -C "$dest" remote add origin "$url"
   fi
-  # Get the latest $br (main, except HeartGold for now). Only tracked source files change: ROMs, build cache (pspoke/, build/), followers.bin and the
+  # Get the latest $br (main). Only tracked source files change: ROMs, build cache (pspoke/, build/), followers.bin and the
   # SD card are untracked/ignored or elsewhere, so they are never touched.
   if ! git -C "$dest" fetch -q origin "$br" 2>&1; then
     echo "  (could not check GitHub for updates; using what is there)"
