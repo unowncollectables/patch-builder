@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Downloads (or updates) a port's project folder so nobody has to use git by hand. The builder window calls it.
 #   p3ds_get.sh platinum | soulsilver      clone into ~/3ds-platinum or ~/Pokemon-Soulsilver-New3ds (or P3DS_DEST)
+#   p3ds_get.sh heartgold                  HeartGold is built from the SoulSilver project, in a clone of its own:
+#                                          ~/Pokemon-HeartGold-New3ds. The SoulSilver folder is never used or changed.
 #   p3ds_get.sh ensure-git                 install git (needs root)
 # Prints  ##PROJECT:<folder>  when done. An existing clone is only fast-forwarded, and only if you have no edits in it.
 set -uo pipefail
@@ -15,8 +17,12 @@ case "$what" in
     exit 0 ;;
   platinum)   url=${P3DS_PLATINUM_URL:-https://github.com/unowncollectables/3ds-platinum};            def="$HOME/3ds-platinum";            marker=work_patches ;;
   soulsilver) url=https://github.com/unowncollectables/Pokemon-Soulsilver-New3ds; def="$HOME/Pokemon-Soulsilver-New3ds"; marker=pspoke-patches ;;
-  *) echo "usage: $0 platinum|soulsilver|ensure-git" >&2; exit 2 ;;
+  heartgold)  url=https://github.com/unowncollectables/Pokemon-Soulsilver-New3ds; def="$HOME/Pokemon-HeartGold-New3ds"; marker=heartgold3ds
+              # While HeartGold is still being finished it lives on its own branch; it moves to main when it is merged.
+              br=${P3DS_HG_BRANCH:-claude/project-thread-wgcit8} ;;
+  *) echo "usage: $0 platinum|soulsilver|heartgold|ensure-git" >&2; exit 2 ;;
 esac
+br=${br:-main}
 command -v git >/dev/null || { echo "git is not installed"; exit 3; }
 dest="${P3DS_DEST:-$def}"
 if [ -d "$dest/.git" ] && [ "${P3DS_OFFLINE:-}" = 1 ]; then
@@ -29,9 +35,8 @@ elif [ -d "$dest/.git" ]; then
     echo "  [!]       $dest pointed at '${cur:-nothing}'; switching it to $url"
     git -C "$dest" remote remove origin 2>/dev/null; git -C "$dest" remote add origin "$url"
   fi
-  # Get the latest main. Only tracked source files change: ROMs, build cache (pspoke/, build/), followers.bin and the
+  # Get the latest $br (main, except HeartGold for now). Only tracked source files change: ROMs, build cache (pspoke/, build/), followers.bin and the
   # SD card are untracked/ignored or elsewhere, so they are never touched.
-  br=main
   if ! git -C "$dest" fetch -q origin "$br" 2>&1; then
     echo "  (could not check GitHub for updates; using what is there)"
   else
@@ -65,12 +70,12 @@ else
     exit 1
   fi
   echo "Downloading $url ..."
-  git clone -q "$url" "$dest.partial" 2>&1 && mv "$dest.partial" "$dest" || { rm -rf "$dest.partial"; hint "Could not download the project. Check that this computer is online, then press the button again."; exit 1; }
+  git clone -q -b "$br" "$url" "$dest.partial" 2>&1 && mv "$dest.partial" "$dest" || { rm -rf "$dest.partial"; hint "Could not download the project. Check that this computer is online, then press the button again."; exit 1; }
   echo "  [ok]      downloaded to $dest"
 fi
 [ -d "$dest/.git" ] && echo "##HEAD:$what:$(git -C "$dest" log -1 --format='%H %cs %s')"
 if [ "${P3DS_CHECK_REMOTE:-}" = 1 ] && [ -d "$dest/.git" ]; then
-  r=$(git ls-remote -q "$url" refs/heads/main 2>/dev/null | cut -f1)
+  r=$(git ls-remote -q "$url" "refs/heads/$br" 2>/dev/null | cut -f1)
   [ -n "$r" ] && echo "##REMOTE:$what:$r"
 fi
 echo "##PROJECT:$dest"
