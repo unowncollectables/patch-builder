@@ -140,7 +140,7 @@ bash p3ds_get.sh platinum | soulsilver | heartgold   # download the project into
 `ss_build.sh` steps: `check needs setup stage build link cia deploy`. Every step is safe to repeat.
 Needs root once for `setup` (apt + devkitPro); the GUI does that for you (WSL runs it as root, Linux asks via `pkexec`/`sudo`).
 
-The builder installs the same tools for Platinum, SoulSilver and HeartGold. If automatic setup still fails, open the build details to see which download or install failed. You can also run the devkitPro setup by hand in your WSL Ubuntu terminal:
+The builder installs the same tools for Platinum, SoulSilver and HeartGold. On a fresh setup it downloads and verifies the 3DS tools from devkitPro’s official container image. Docker does not need to be installed. If setup fails, open the build details to see which download or install failed. For a manual devkitPro setup on Ubuntu:
 
 ```sh
 wget -U "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0" https://apt.devkitpro.org/install-devkitpro-pacman

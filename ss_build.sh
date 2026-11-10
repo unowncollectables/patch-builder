@@ -17,6 +17,11 @@ set -uo pipefail
 if [ "${1:-}" = "--env-b64" ]; then eval "$(printf %s "${2:-}" | base64 -d)"; shift 2; fi
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The .exe bundles the common setup and tool checks next to the drivers.
+source "$HERE/setup_build_tools.sh" || {
+  echo "##HINT:The build tools setup script is missing. Download the builder again and retry."
+  exit 1
+}
 [ "$(ps -o pgid= $$ 2>/dev/null | tr -d ' ')" = "$$" ] && echo $$ > "/tmp/p3ds_builder.$(id -u).pid" 2>/dev/null
 ROOT="${P3DS_ROOT:-}"
 if [ -z "$ROOT" ] || [ ! -f "$ROOT/upstream.lock" ] || [ ! -d "$ROOT/pspoke-patches" ]; then
@@ -152,9 +157,7 @@ step_needs() {
   local tools=ok
   for c in git make patch rsync curl python3 sha1sum; do command -v $c >/dev/null || tools=missing; done
   python3 -I -c 'import ndspy, PIL, numpy' 2>/dev/null || tools=missing
-  for f in "$DKP/devkitARM/bin/arm-none-eabi-gcc" "$DKP/libctru/include/3ds.h" "$DKP/libctru/include/citro3d.h" "$DKP/tools/bin/3dsxtool" "$DKP/tools/bin/picasso"; do
-    [ -e "$f" ] || tools=missing
-  done
+  devkitpro_ready "$DKP" || tools=missing
   [ $tools = ok ] || echo "##NEED:setup"
   [ -f "$TREE/soulsilver-native-core/nitromain-perf/Makefile" ] || echo "##NEED:full"
   return 0
@@ -162,11 +165,6 @@ step_needs() {
 
 # ------------------------------------------------------------------------------------------------ setup (root)
 step_setup() {
-  # The .exe bundles this next to all three build drivers.
-  source "$HERE/setup_build_tools.sh" || {
-    hint "The build tools setup script is missing. Download the builder again and retry."
-    return 1
-  }
   setup_build_tools || return 1
   say "Setup done."
 }
