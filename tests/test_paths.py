@@ -33,14 +33,50 @@ class HeartGoldReady(unittest.TestCase):
 
     def test_hg_file_recognised_and_kept_out_of_other_boxes(self):
         hg, ss = self._rom(b"IPKE"), self._rom(b"IPGE")
-        self.assertTrue(b.rom_report(hg, "heartgold")[0])
+        self.assertFalse(b.rom_report(hg, "heartgold")[0])      # US HeartGold but not the exact dump: the build would stop
+        old = b.HG_SHA1
+        b.HG_SHA1 = b._sha1(hg)
+        try:
+            self.assertTrue(b.rom_report(hg, "heartgold")[0])
+        finally:
+            b.HG_SHA1 = old
         self.assertFalse(b.rom_report(ss, "heartgold")[0])
+        self.assertIn("SoulSilver box", b.rom_report(ss, "heartgold")[1])
         self.assertFalse(b.rom_report(hg, "soulsilver")[0])
+        self.assertIn("HeartGold box", b.rom_report(hg, "soulsilver")[1])
         self.assertFalse(b.rom_report(hg, "platinum")[0])
 
-    def test_hg_not_buildable_yet(self):
-        self.assertNotIn("heartgold", b.GAMES)
+    def test_hg_is_a_separate_game(self):
+        g, ss = b.GAMES["heartgold"], b.GAMES["soulsilver"]
+        self.assertEqual(g["script"], "hg_build.sh")
+        self.assertNotEqual(g["repo"], ss["repo"])                     # its own project folder setting
+        self.assertFalse(set(g["folders"]) & set(ss["folders"]))       # and its own clone
         self.assertEqual(b.game_out_dir("/h/x", "soulsilver"), "/h/x/soulsilver3ds/full")
+        self.assertEqual(b.game_out_dir("/h/y", "heartgold"), "/h/y/heartgold3ds/full")
+        for a, c in zip(b.SD_LAYOUT["heartgold"], b.SD_LAYOUT["soulsilver"]):
+            self.assertNotEqual(a, c)                                  # no SD folder, program, .cia, ROM or save name shared
+        self.assertEqual(b.selected_games({"want_ss": True, "want_hg": True}), ["soulsilver", "heartgold"])
+        script = b.build_command({"hgrepo": "/h/y", "ssrepo": "/h/x", "heartgold": "/r/hg.nds"}, False, ["check"], game="heartgold")[-1]
+        self.assertIn("P3DS_ROOT='/h/y'", script.replace('"', "'"))
+        self.assertIn("P3DS_HEARTGOLD", script)
+        self.assertIn("hg_build.sh", script)
+
+    def test_hg_copy_never_touches_soulsilver(self):
+        import tempfile
+        t = tempfile.mkdtemp()
+        out, sd = os.path.join(t, "out"), os.path.join(t, "F")
+        os.makedirs(os.path.join(out, "HeartGold")); os.makedirs(os.path.join(sd, "3ds", "soulsilver3ds"))
+        open(os.path.join(out, "HeartGold", "heartgold3ds.3dsx"), "wb").write(b"hg")
+        ssd = os.path.join(sd, "3ds", "soulsilver3ds")
+        for n in ("soulsilver.sav", "soulsilver3ds.3dsx", "soulsilver.nds"):
+            open(os.path.join(ssd, n), "wb").write(b"SS" + n.encode())
+        before = {n: open(os.path.join(ssd, n), "rb").read() for n in os.listdir(ssd)}
+        rom = os.path.join(t, "hg.nds"); open(rom, "wb").write(b"rom")
+        ok, msg, d = b.sd_copy("heartgold", out, sd, rom, log=lambda *_: None)
+        self.assertTrue(ok, msg)
+        self.assertEqual(os.path.normpath(d), os.path.join(sd, "3ds", "heartgold3ds"))
+        self.assertEqual(sorted(os.listdir(d)), ["heartgold.nds", "heartgold3ds.3dsx"])
+        self.assertEqual({n: open(os.path.join(ssd, n), "rb").read() for n in os.listdir(ssd)}, before)
 
 
 class SdCopy(unittest.TestCase):

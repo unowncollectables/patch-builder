@@ -10,7 +10,7 @@ Package as an .exe with build_exe.bat (PyInstaller). Standard library only.
 """
 import hashlib, json, os, re, string, subprocess, sys, threading, queue, time, urllib.request, webbrowser
 
-VERSION = "1.3.6"   # bump before tagging a release; compared with the newest GitHub release
+VERSION = "1.3.8"   # bump before tagging a release; compared with the newest GitHub release
 RELEASES_API = "https://api.github.com/repos/unowncollectables/patch-builder/releases/latest"
 RELEASES_PAGE = "https://github.com/unowncollectables/patch-builder/releases/latest"
 
@@ -19,7 +19,7 @@ HERE = os.path.dirname(os.path.abspath(sys.argv[0] if getattr(sys, "frozen", Fal
 # The .exe carries its own copy of the build scripts (build_exe.bat bundles them), so it works from any folder.
 SCRIPTS = getattr(sys, "_MEIPASS", HERE)
 SETTINGS = os.path.join(os.path.expanduser("~"), ".p3ds_builder.json")
-FIELDS = ["repo", "ssrepo", "platinum", "soulsilver", "out", "sd"]
+FIELDS = ["repo", "ssrepo", "hgrepo", "platinum", "soulsilver", "heartgold", "out", "sd"]
 DEFAULT_OUT = os.path.join(os.path.expanduser("~"), "Documents", "Pokemon 3DS Builds")
 LAST_LOG = os.path.join(DEFAULT_OUT, "p3ds_builder_last_log.txt")   # easy to find in Documents (was your user folder)
 PLAT_SHA1 = "0862ec35b24de5c7e2dcb88c9eea0873110d755c"
@@ -29,14 +29,13 @@ GAMES = {   # per game: the build script, the config field holding its project f
                    "folders": ["3ds-platinum", "platinum3ds"]},
     "soulsilver": {"script": "ss_build.sh",   "repo": "ssrepo", "marker": "upstream.lock",  "name": "SoulSilver",
                    "folders": ["Pokemon-Soulsilver-New3ds", "pokemon-soulsilver-new3ds"]},
+    # HeartGold (experimental) is the SoulSilver port built as a separate game. Same GitHub project, but its own clone
+    # (p3ds_get.sh heartgold), its own build tree, SD folder, save and .cia: nothing of SoulSilver's is read or written.
+    "heartgold":  {"script": "hg_build.sh",   "repo": "hgrepo", "marker": "heartgold3ds",   "name": "HeartGold",
+                   "folders": ["Pokemon-HeartGold-New3ds", "pokemon-heartgold-new3ds"]},
 }
-# Games the builder knows about but cannot build yet (not in GAMES, so no tick box, no steps, nothing runs).
-# HeartGold is the SoulSilver port's sibling: same repo, its own heartgold3ds folder and CIA. Moving it into GAMES
-# (with an hg_build.sh) is the whole switch; until then it is only recognised so a HeartGold file gets a clear answer.
-HG_SHA1 = "4fcded0e2713dc03929845de631d0932ea2b5a37"   # HeartGold (US), for the later HeartGold box
-FUTURE_GAMES = {
-    "heartgold": {"name": "HeartGold", "code": "IPKE", "sha1": HG_SHA1, "sd_folder": "heartgold3ds", "cia": "heartgold3ds.cia"},
-}
+HG_SHA1 = "4fcded0e2713dc03929845de631d0932ea2b5a37"   # HeartGold (US); heartgold_sha1 in the SoulSilver repo's upstream.lock
+HG_FILES_SHA1 = "8b84c6b2d8f980f8c6247cc6814e7557f927dced"   # heartgold_files_sha1 there: every data file and overlay of that dump
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if IS_WIN else 0
 FRIENDLY = {"check": "Checking setup", "needs": "Working out what is needed", "setup": "Installing build tools (one time)",
             "link": "Linking project folder", "stage": "Checking your game file", "pspoke": "Preparing pspoke",
@@ -154,7 +153,7 @@ def build_command(cfg, root, steps, legacy=False, game="platinum"):
         exports.append("export P3DS_CIA=1")
     if cfg.get("sd") and not IS_WIN:      # on Windows the exe itself copies to the card (sd_copy), WSL never sees it
         exports.append("export P3DS_SD_WANTED=1")
-    for key, var in (("platinum", "P3DS_PLATINUM"), ("soulsilver", "P3DS_SOULSILVER"), ("sd", "P3DS_SD"), ("out", "P3DS_OUT")):
+    for key, var in (("platinum", "P3DS_PLATINUM"), ("soulsilver", "P3DS_SOULSILVER"), ("heartgold", "P3DS_HEARTGOLD"), ("sd", "P3DS_SD"), ("out", "P3DS_OUT")):
         if key == "sd" and IS_WIN:
             continue
         if cfg.get(key):
@@ -206,7 +205,28 @@ def game_out_dir(repo, game):
 SD_LAYOUT = {   # game -> (sd folder, .3dsx name, .cia name on the card, nds name, save name)
     "platinum":   ("platinum3ds", "platinum3ds_full.3dsx", "platinum3ds.cia", "platinum.nds", "platinum.sav"),
     "soulsilver": ("soulsilver3ds", "soulsilver3ds.3dsx", "soulsilver3ds.cia", "soulsilver.nds", "soulsilver.sav"),
+    "heartgold":  ("heartgold3ds", "heartgold3ds.3dsx", "heartgold3ds.cia", "heartgold.nds", "heartgold.sav"),
 }
+
+
+def _nds_files_sha1(path):
+    """One SHA1 over the SHA1 of every file in a .nds file table (game data and overlays; not the boot code).
+    Same value as scripts/hg_romcheck.py in the SoulSilver repo. None if the file is not a readable .nds."""
+    import struct
+    with open(path, "rb") as f:
+        d = f.read()
+    if len(d) < 0x200:
+        return None
+    fat, size = struct.unpack_from("<II", d, 0x48)
+    if fat + size > len(d) or size % 8:
+        return None
+    h = hashlib.sha1()
+    for i in range(size // 8):
+        a, e = struct.unpack_from("<II", d, fat + i * 8)
+        if not (0 <= a <= e <= len(d)):
+            return None
+        h.update(hashlib.sha1(d[a:e]).digest())
+    return h.hexdigest()
 
 
 def _sha1(path):
@@ -535,16 +555,21 @@ def rom_report(path, want="platinum"):
         size = os.path.getsize(path)
     except OSError as e:
         return False, "Cannot read that file (%s)." % e.strerror
-    if want == "heartgold":      # recognised only; the builder has no HeartGold build yet
-        fg = FUTURE_GAMES["heartgold"]
-        if code != fg["code"]:
-            return False, "That is not Pokemon HeartGold (US, game code IPKE)."
-        if _sha1(path) != fg["sha1"]:
-            return True, "US HeartGold, but not the exact dump the decomp uses. It may still work."
+    if want == "heartgold":
+        if code == "IPGE":
+            return False, "That is SoulSilver, not HeartGold. Put it in the SoulSilver box."
+        if code.startswith("CPU"):
+            return False, "That is Pokemon Platinum, not HeartGold. Put it in the Platinum box."
+        if code != "IPKE":
+            if code.startswith("IPG") or code.startswith("IPK"):
+                return False, "That is HeartGold/SoulSilver from another region (%s). It needs US HeartGold (IPKE)." % code
+            return False, "That is not Pokemon HeartGold."
+        if _sha1(path) != HG_SHA1 and _nds_files_sha1(path) != HG_FILES_SHA1:   # boot code may differ (not used); data may not
+            return False, "US HeartGold, but not the exact dump the port needs, so the build would stop. Use a clean dump of your cartridge."
         return True, "Correct game: Pokemon HeartGold US."
     if want == "soulsilver":
         if code == "IPKE":
-            return False, "That is HeartGold, not SoulSilver. This port is SoulSilver (US)."
+            return False, "That is HeartGold, not SoulSilver. Put it in the HeartGold box."
         if code.startswith("CPU"):
             return False, "That is Pokemon Platinum, not SoulSilver. Put it in the Platinum box."
         if code != "IPGE":
@@ -563,7 +588,7 @@ def rom_report(path, want="platinum"):
     if code.startswith("CPU") and code != "CPUE":
         return False, "That is Platinum from another region (%s). You need the US version." % code
     if code in ("IPGE", "IPKE"):
-        return False, "That is HeartGold/SoulSilver, not Platinum. Put it in the SoulSilver box."
+        return False, "That is HeartGold/SoulSilver, not Platinum. Put it in the SoulSilver or HeartGold box."
     if code != "CPUE":
         return False, "That is not Pokemon Platinum (game code %s)." % code
     if rev == 0:
@@ -607,12 +632,12 @@ def sd_report(path):
     if not os.path.isdir(path):
         return False, "Folder not found. Is the SD card plugged in?"
     if os.path.isdir(os.path.join(path, "Nintendo 3DS")):
-        return True, "Looks like a 3DS SD card. The games go in 3ds/platinum3ds and 3ds/soulsilver3ds (your saves are backed up first)."
+        return True, "Looks like a 3DS SD card. Each game gets its own folder in 3ds/ (your saves are backed up first)."
     for sub in ("3ds", "Nintendo 3DS"):
         if os.path.basename(os.path.normpath(path)).lower() == sub.lower():
             return False, "Pick the top of the SD card, not the '%s' folder inside it." % sub
     if os.path.isdir(os.path.join(path, "3ds")):
-        return True, "Has a 3ds folder. The games go in 3ds/platinum3ds and 3ds/soulsilver3ds."
+        return True, "Has a 3ds folder. Each game gets its own folder in it."
     return False, "This does not look like a 3DS SD card (no 'Nintendo 3DS' folder). Pick the top of the card."
 
 
@@ -620,7 +645,8 @@ def find_project(game="platinum"):
     """Best guess at the user's clone of a port's project (empty = the builder downloads it)."""
     g = GAMES[game]
     home = os.path.expanduser("~")
-    cands = [os.path.join(HERE, ".."), os.path.join(HERE, "..", "..")]
+    # HeartGold always gets its own clone, found by its own folder name only: a SoulSilver folder is never reused for it.
+    cands = [] if game == "heartgold" else [os.path.join(HERE, ".."), os.path.join(HERE, "..", "..")]
     for f in g["folders"]:
         cands += [os.path.join(HERE, f), os.path.join(HERE, "..", f)]
         for base in (home, os.path.join(home, "3ds"), os.path.join(home, "Documents"), os.path.join(home, "Desktop"), os.path.join(home, "Downloads")):
@@ -693,6 +719,7 @@ def load_settings():
     out["offline"] = bool(d.get("offline"))   # beginners want both the .3dsx and the HOME Menu .cia
     out["want_plat"] = bool(d.get("want_plat", True))
     out["want_ss"] = bool(d.get("want_ss", False))
+    out["want_hg"] = bool(d.get("want_hg", False))
     out["autofind"] = bool(d.get("autofind", False))
     return out
 
@@ -706,7 +733,7 @@ def save_settings(d):
 
 
 def selected_games(c):
-    return [g for g, k in (("platinum", "want_plat"), ("soulsilver", "want_ss")) if c.get(k)]
+    return [g for g, k in (("platinum", "want_plat"), ("soulsilver", "want_ss"), ("heartgold", "want_hg")) if c.get(k)]
 
 
 def plan_for(game, pipe, c, needs=None):
@@ -761,6 +788,8 @@ def run_gui():
     offline = tk.BooleanVar(value=cfg["offline"])
     want_plat = tk.BooleanVar(value=cfg["want_plat"])
     want_ss = tk.BooleanVar(value=cfg["want_ss"])
+    want_hg = tk.BooleanVar(value=cfg["want_hg"])
+    wants = (("platinum", want_plat), ("soulsilver", want_ss), ("heartgold", want_hg))
     want_cia = tk.BooleanVar(value=cfg["cia"])
     autofind = tk.BooleanVar(value=cfg["autofind"])
     status = tk.StringVar(value="")
@@ -818,6 +847,7 @@ def run_gui():
     root.bind_all("<Button-5>", on_wheel)
     # Header: colours follow the ticked game (SoulSilver = gold + silver, Platinum = steel + red).
     THEMES = {"soulsilver": ("#c9ccd3", "#d9a93a", "Pokemon SoulSilver"), "platinum": ("#8d9bb5", "#c0463c", "Pokemon Platinum"),
+              "heartgold": ("#d9a93a", "#b5462e", "Pokemon HeartGold (experimental)"),
               "both": ("#c9ccd3", "#8d9bb5", "Pokemon SoulSilver + Platinum"), "none": ("#8a8f96", "#8a8f96", "Pokemon 3DS Builder")}
     hdr = tk.Frame(outer, bg=BG)
     hdr.pack(fill="x", pady=(0, 10))
@@ -830,9 +860,15 @@ def run_gui():
     hdr_sub = tk.Label(hdr, text="Play Pokemon on your 3DS", font=big, bg=BG, fg=MUTED, anchor="w")
     hdr_sub.pack(fill="x")
 
+    def theme_key():
+        on = [g for g, v in wants if v.get()]
+        return on[0] if len(on) == 1 else "both" if on else "none"
+
     def apply_theme():
-        k = "both" if want_plat.get() and want_ss.get() else "soulsilver" if want_ss.get() else "platinum" if want_plat.get() else "none"
+        k = theme_key()
         a, b, name = THEMES[k]
+        if k == "both":
+            name = "Pokemon " + " + ".join(GAMES[g]["name"] for g, v in wants if v.get())
         if not st["busy"]:
             bar_color(b)
         stripe.configure(bg=a)
@@ -876,9 +912,11 @@ def run_gui():
     grow = ttk.Frame(outer)
     grow.pack(fill="x", pady=(2, 10))
     ttk.Checkbutton(grow, text="Pokemon Platinum", variable=want_plat).pack(side="left", padx=(0, 18))
-    ttk.Checkbutton(grow, text="Pokemon SoulSilver", variable=want_ss).pack(side="left")
-    ttk.Label(grow, text="  (both is fine)", foreground=MUTED).pack(side="left")
-    ttk.Label(outer, text="Pokemon HeartGold: coming later. It is not built yet, so there is nothing to tick.",
+    ttk.Checkbutton(grow, text="Pokemon SoulSilver", variable=want_ss).pack(side="left", padx=(0, 18))
+    ttk.Checkbutton(grow, text="Pokemon HeartGold (experimental)", variable=want_hg).pack(side="left")
+    ttk.Label(grow, text="  (any mix is fine)", foreground=MUTED).pack(side="left")
+    ttk.Label(outer, text="HeartGold is a separate game with its own folder, save and HOME Menu icon. It never touches SoulSilver. "
+                          "It is new and experimental: expect bugs.",
               foreground=MUTED, wraplength=WRAP).pack(anchor="w", pady=(0, 4))
     ttk.Label(outer, text="Optional: following Pokemon for Platinum (your Pokemon walks behind you, like in HeartGold/SoulSilver). "
                           "It needs your SoulSilver game file too (box 2b). You do not have to build SoulSilver for this.",
@@ -888,11 +926,12 @@ def run_gui():
     games_area.pack(fill="x")
     field(games_area, "platinum", "2a.  Your Pokemon Platinum game file (.nds, US Rev 1)", "file")
     field(games_area, "soulsilver", "2b.  Your Pokemon SoulSilver game file (.nds, US). Optional for Platinum: adds following Pokemon", "file")
+    field(games_area, "heartgold", "2c.  Your Pokemon HeartGold game file (.nds, US)", "file")
     def do_autofind(*_):
         if not autofind.get():
             return
         found = []
-        for g in ("platinum", "soulsilver"):
+        for g in ("platinum", "soulsilver", "heartgold"):
             if not vars_[g].get().strip():
                 f = find_nds(g)
                 if f:
@@ -1042,6 +1081,7 @@ def run_gui():
               foreground=MUTED, wraplength=WRAP).pack(anchor="w", pady=(0, 6))
     field(adv, "repo", "Platinum project folder (3ds-platinum)", "dir")
     field(adv, "ssrepo", "SoulSilver project folder (Pokemon-Soulsilver-New3ds)", "dir")
+    field(adv, "hgrepo", "HeartGold project folder (Pokemon-HeartGold-New3ds, its own copy of the SoulSilver project)", "dir")
     ttk.Checkbutton(adv, text="Also apply the older Platinum patches/*.patch", variable=legacy).pack(anchor="w")
 
     def do_clean_boot():
@@ -1130,7 +1170,7 @@ def run_gui():
     def check_rom(key):
         p = vars_[key].get().strip().strip('"')
         if not p:
-            set_check(key, None, "Required for this game." if (want_plat if key == "platinum" else want_ss).get() else "")
+            set_check(key, None, "Required for this game." if dict(wants)[key].get() else "")
             return
         if (p, key) in rom_cache:     # keyed by game too: the same file can be checked for the other game's box
             set_check(key, *rom_cache[(p, key)])
@@ -1146,7 +1186,7 @@ def run_gui():
         # a game's boxes only show while its tick is on (the Platinum box also takes SoulSilver's ROM for following Pokemon)
         follow_note.pack_forget()
         apply_theme()
-        for key, var in (("platinum", want_plat), ("soulsilver", want_ss)):
+        for key, var in wants:
             # the SoulSilver box also shows for Platinum alone: that file is what adds following Pokemon
             if var.get() or (key == "soulsilver" and want_plat.get()):
                 boxes[key].pack(fill="x", pady=(0, 10))
@@ -1161,18 +1201,21 @@ def run_gui():
             follow_note.pack(anchor="w", pady=(0, 10))
         check_rom("platinum")
         check_rom("soulsilver")
+        check_rom("heartgold")
         set_check("sd", *sd_report(vars_["sd"].get().strip().strip('"')))
         set_check("repo", *project_report(vars_["repo"].get().strip().strip('"'), "platinum"))
         set_check("ssrepo", *project_report(vars_["ssrepo"].get().strip().strip('"'), "soulsilver"))
+        set_check("hgrepo", *project_report(vars_["hgrepo"].get().strip().strip('"'), "heartgold"))
     for k in FIELDS:
         vars_[k].trace_add("write", refresh)
     want_plat.trace_add("write", refresh)
     want_ss.trace_add("write", refresh)
+    want_hg.trace_add("write", refresh)
 
     # ---- running -------------------------------------------------------------------------------------
     def current_cfg():
         c = {k: vars_[k].get().strip().strip('"') for k in FIELDS}
-        c["want_plat"], c["want_ss"], c["cia"] = want_plat.get(), want_ss.get(), want_cia.get()
+        c["want_plat"], c["want_ss"], c["want_hg"], c["cia"] = want_plat.get(), want_ss.get(), want_hg.get(), want_cia.get()
         c["offline"] = offline.get()
         c["autofind"] = autofind.get()
         c["out"] = c.get("out") or DEFAULT_OUT
@@ -1422,7 +1465,7 @@ def run_gui():
                         vars_[g].set(os.path.normpath(f) if IS_WIN else f)
                         c[g] = vars_[g].get()
         if not games:
-            messagebox.showwarning("Which game?", "Tick Pokemon Platinum, Pokemon SoulSilver, or both, in step 1.")
+            messagebox.showwarning("Which game?", "Tick at least one game in step 1.")
             return
         for g in games:
             rok, rmsg = project_report(c[GAMES[g]["repo"]], g)
@@ -1522,7 +1565,7 @@ def run_gui():
         log.delete("1.0", "end")
         log.configure(state="disabled")
         set_target(0, True)
-        bar_color(THEMES["both" if want_plat.get() and want_ss.get() else "soulsilver" if want_ss.get() else "platinum" if want_plat.get() else "none"][1])
+        bar_color(THEMES[theme_key()][1])
         pct_var.set("")
         st["t0"], st["last"], st["cur"] = time.time(), "", ""
         set_busy(True)
