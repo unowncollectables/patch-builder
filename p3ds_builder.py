@@ -77,6 +77,8 @@ SD_STEPS = ("1. Put the SD card in your New 3DS and turn it on.\n"
             "3. Or for a HOME Menu icon: open FBI > SD > cias > platinum3ds.cia > Install.\n"
             "If you copy by hand: the .3dsx and your .nds (renamed platinum.nds) go in SD:/3ds/platinum3ds/, the .cia goes in SD:/cias/.")
 
+WRAP = 720      # text width (pixels) of the window's labels
+
 HINTS = [
     (r"0x80370102|Virtual Machine Platform|virtualization|HCS_E_HYPERV_NOT_INSTALLED",
      "Windows cannot start Linux because virtualization is off. Turn on 'Virtualization' (Intel VT-x / AMD SVM) in your PC's BIOS/UEFI settings, then press the button again."),
@@ -91,6 +93,14 @@ HINTS = [
      "WSL has no Linux installed yet. Open PowerShell and run:  wsl --install -d Ubuntu   then restart."),
     (r"virtual memory exhausted|cc1.*: out of memory|Killed\s+signal|internal compiler error: Killed",
      "The computer ran out of memory while compiling. Close other programs and press the button again."),
+    (r"Permission denied.*(?:\.p3ds|sdmc|/mnt/)|Operation not permitted",
+     "Windows or the SD card refused to let the builder write there. Close anything that has the folder open (File Explorer, FBI), check the SD card lock switch, and press the button again."),
+    (r"git: command not found|git is not installed",
+     "Git is missing. Press the green button again: the builder installs it for you (it may ask for admin rights)."),
+    (r"No module named '?ndspy",
+     "A Python helper (ndspy) is missing. Press the green button again: the builder installs it for you."),
+    (r"devkitPro.*(?:404|not found)|dkp-pacman.*(?:error|failed)",
+     "The 3DS compiler download failed. Check that this computer is online and press the button again."),
     (r"sudo: a password is required", "Installing tools needs admin rights. On Linux run:  sudo bash p3ds_build.sh setup"),
 ]
 
@@ -665,7 +675,7 @@ def explain(log_text, script_hint, failed_step):
             return msg
     m = re.search(r"^[^\n]*\b(?:error|Error):[^\n]*$", log_text, re.M)
     if m:
-        return "The game code did not compile. First error: " + m.group(0).strip()[:220]
+        return "The game did not compile. First error: " + m.group(0).strip()[:220]
     where = FRIENDLY.get(failed_step, failed_step or "the build")
     return "Something went wrong while %s. Press 'Copy details for help' and paste it into a GitHub issue (or to an AI helper)." % where.lower()
 
@@ -831,7 +841,7 @@ def run_gui():
         hdr_sub.configure(text="Building: " + name if k != "none" else "Tick a game below to start")
     ttk.Label(outer, text="Just a few steps: tick a game, point to your game file, pick your SD card, press the green button. "
                           "Your game files never leave this computer.",
-              foreground=MUTED, wraplength=720).pack(anchor="w", pady=(0, 10))
+              foreground=MUTED, wraplength=WRAP).pack(anchor="w", pady=(0, 10))
 
     checks = {}
     boxes = {}
@@ -856,11 +866,12 @@ def run_gui():
             if p:
                 vars_[key].set(os.path.normpath(p) if IS_WIN else p)
         ttk.Button(row, text=pick_label, command=pick).pack(side="left")
-        msg = ttk.Label(box, text="", wraplength=720)
+        msg = ttk.Label(box, text="", wraplength=WRAP)
         msg.pack(anchor="w")
         checks[key] = msg
         return row
 
+    ttk.Separator(outer).pack(fill="x", pady=(0, 8))
     ttk.Label(outer, text="1.  Which game(s) do you want on your 3DS?", style="Step.TLabel").pack(anchor="w")
     grow = ttk.Frame(outer)
     grow.pack(fill="x", pady=(2, 10))
@@ -868,10 +879,10 @@ def run_gui():
     ttk.Checkbutton(grow, text="Pokemon SoulSilver", variable=want_ss).pack(side="left")
     ttk.Label(grow, text="  (both is fine)", foreground=MUTED).pack(side="left")
     ttk.Label(outer, text="Pokemon HeartGold: coming later. It is not built yet, so there is nothing to tick.",
-              foreground=MUTED, wraplength=720).pack(anchor="w", pady=(0, 4))
+              foreground=MUTED, wraplength=WRAP).pack(anchor="w", pady=(0, 4))
     ttk.Label(outer, text="Optional: following Pokemon for Platinum (your Pokemon walks behind you, like in HeartGold/SoulSilver). "
                           "It needs your SoulSilver game file too (box 2b). You do not have to build SoulSilver for this.",
-              foreground=MUTED, wraplength=720).pack(anchor="w", pady=(0, 8))
+              foreground=MUTED, wraplength=WRAP).pack(anchor="w", pady=(0, 8))
 
     games_area = ttk.Frame(outer)
     games_area.pack(fill="x")
@@ -892,13 +903,13 @@ def run_gui():
                                 "\n\nIt is only read, never changed.")
     ttk.Checkbutton(games_area, text="Look for my game files automatically (Downloads, Desktop, Documents)",
                     variable=autofind, command=do_autofind).pack(anchor="w", pady=(0, 6))
-    follow_note = ttk.Label(games_area, text="", foreground=MUTED, wraplength=720)
+    follow_note = ttk.Label(games_area, text="", foreground=MUTED, wraplength=WRAP)
     field(outer, "out", "3.  Where to save the finished game on this PC (the .cia and .3dsx always go here)", "dir")
     ttk.Label(outer, text="Tip: the finished files always land here too, so if the SD step fails you can copy them by hand.",
-              foreground=MUTED, wraplength=720).pack(anchor="w", pady=(0, 8))
+              foreground=MUTED, wraplength=WRAP).pack(anchor="w", pady=(0, 8))
     sd_row = field(outer, "sd", "4.  Your 3DS SD card (optional, plugged into this computer)", "dir")
     ttk.Label(outer, text="Tip: switch the 3DS off, take the card out, plug it into this PC, press \"Find it\". "
-              "No card yet? Leave this empty and copy the files later.", foreground=MUTED, wraplength=720).pack(anchor="w", pady=(0, 8))
+              "No card yet? Leave this empty and copy the files later.", foreground=MUTED, wraplength=WRAP).pack(anchor="w", pady=(0, 8))
 
     def find_sd():
         cards = find_sd_cards()
@@ -913,8 +924,9 @@ def run_gui():
     ttk.Checkbutton(outer, text="Also make the installer for the HOME Menu (.cia, install it with FBI). Adds a few minutes.",
                     variable=want_cia).pack(anchor="w", pady=(0, 6))
 
+    ttk.Separator(outer).pack(fill="x", pady=(6, 8))
     ttk.Label(outer, text="5.  Press the green button and wait. The first build takes a while (up to an hour); "
-              "later ones are much faster. You can leave it running.", style="Step.TLabel", wraplength=720).pack(anchor="w", pady=(4, 0))
+              "later ones are much faster. You can leave it running.", style="Step.TLabel", wraplength=WRAP).pack(anchor="w", pady=(4, 0))
     go = tk.Button(outer, text="Build my game and put it on the SD card", font=(big[0], 15, "bold"), bg=GREEN, fg="white",
                    activebackground="#3aa05c", activeforeground="white", relief="flat", padx=20, pady=10,
                    cursor="hand2", command=lambda: start("auto"))
@@ -931,8 +943,8 @@ def run_gui():
     ttk.Label(outer, text="Green: the normal button, builds what you ticked and copies it to the SD card. "
               "Blue: the same, but downloads the newest game code first. "
               "Amber: deletes the temporary build folder (saves, game files and SD card are kept) so the next build starts fresh.",
-              foreground=MUTED, wraplength=720).pack(anchor="w", pady=(0, 4))
-    clean_hint = tk.Label(outer, text="", bg=BG, fg=AMBER_HOT, font=(big[0], 11, "bold"), wraplength=720, justify="left", anchor="w")
+              foreground=MUTED, wraplength=WRAP).pack(anchor="w", pady=(0, 4))
+    clean_hint = tk.Label(outer, text="", bg=BG, fg=AMBER_HOT, font=(big[0], 11, "bold"), wraplength=WRAP, justify="left", anchor="w")
     clean_hint.pack(fill="x", pady=(0, 4))
     clean = {"need": False, "on": False}
 
@@ -959,6 +971,7 @@ def run_gui():
 
     style.configure("Game.Horizontal.TProgressbar", thickness=22, background="#8a8f96", troughcolor=PANEL, bordercolor=PANEL,
                     lightcolor="#8a8f96", darkcolor="#8a8f96")
+    ttk.Separator(outer).pack(fill="x", pady=(6, 8))
     pct_var = tk.StringVar(value="")
     ttk.Label(outer, textvariable=pct_var, style="Step.TLabel").pack(anchor="w")
     prog = ttk.Progressbar(outer, mode="determinate", maximum=100, style="Game.Horizontal.TProgressbar")
@@ -983,14 +996,14 @@ def run_gui():
             sp = "|/-\\"[(anim["spin"] // 3) % 4]
             pct_var.set("%s  %d%%   %s" % (sp, int(anim["shown"]), st["step_name"]))
         root.after(60, animate)
-    ttk.Label(outer, textvariable=activity, foreground=MUTED, wraplength=720).pack(anchor="w", pady=(2, 0))
+    ttk.Label(outer, textvariable=activity, foreground=MUTED, wraplength=WRAP).pack(anchor="w", pady=(2, 0))
     srow = ttk.Frame(outer)
     srow.pack(fill="x", pady=(4, 0))
     ttk.Label(srow, textvariable=status, font=big).pack(side="left")
     cancel_btn = ttk.Button(srow, text="Cancel", command=lambda: cancel(), state="disabled")
     cancel_btn.pack(side="right")
 
-    banner = tk.Label(outer, text="", font=(big[0], 11, "bold"), wraplength=720, justify="left", anchor="w", padx=10, pady=8)
+    banner = tk.Label(outer, text="", font=(big[0], 11, "bold"), wraplength=WRAP, justify="left", anchor="w", padx=10, pady=8)
     brow = ttk.Frame(outer)
 
     def copy_details():
@@ -1026,7 +1039,7 @@ def run_gui():
 
     adv = ttk.Frame(folds, padding=(0, 8, 0, 0))
     ttk.Label(adv, text="Project folders: leave empty and the builder downloads them for you (into your Linux/WSL home).",
-              foreground=MUTED, wraplength=720).pack(anchor="w", pady=(0, 6))
+              foreground=MUTED, wraplength=WRAP).pack(anchor="w", pady=(0, 6))
     field(adv, "repo", "Platinum project folder (3ds-platinum)", "dir")
     field(adv, "ssrepo", "SoulSilver project folder (Pokemon-Soulsilver-New3ds)", "dir")
     ttk.Checkbutton(adv, text="Also apply the older Platinum patches/*.patch", variable=legacy).pack(anchor="w")
@@ -1040,7 +1053,7 @@ def run_gui():
     ttk.Checkbutton(adv, text="Offline: do not check GitHub for game updates on the green button (the blue button still does)",
                     variable=offline).pack(anchor="w")
     ttk.Label(adv, text="Maintenance tools. You normally never need these: the green button does everything. "
-              "Each one is explained next to its button.", foreground=MUTED, wraplength=720).pack(anchor="w", pady=(10, 4))
+              "Each one is explained next to its button.", foreground=MUTED, wraplength=WRAP).pack(anchor="w", pady=(10, 4))
     abar = ttk.Frame(adv)
     abar.pack(fill="x")
     abar.columnconfigure(1, weight=1)
@@ -1535,7 +1548,7 @@ def run_gui():
         if not ok:
             status.set("Stopped.")
             bar_color("#d9534f")
-            pct_var.set("Stopped at %d%%. Read the red box below; 'Copy details for help' sends it to me." % int(anim["shown"]))
+            pct_var.set("Stopped at %d%%. Read the red box below, then press 'Copy details for help' to share it." % int(anim["shown"]))
             show_banner(False, explain(text, st["hint"], st["failed"]))
             toggle("details", True)
             if pipe != "cleantree" and (st["failed"] in ("build", "link", "full", "relink", "patches", "cia") or STALE_RE.search(text)):
