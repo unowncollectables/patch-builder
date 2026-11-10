@@ -47,7 +47,7 @@ if [ "$(uname -o 2>/dev/null)" = "Msys" ]; then
     sed -i 's/^\tLIB +=$/\tLIB += -liconv/' "$SRC/Project_CTR/makerom/makefile"
 fi
 make -C "$SRC/Project_CTR/makerom" PROJECT_PLATFORM=GNU deps >/dev/null
-make -C "$SRC/Project_CTR/makerom" PROJECT_PLATFORM=GNU -j"$(nproc)" >/dev/null
+make -C "$SRC/Project_CTR/makerom" PROJECT_PLATFORM=GNU -j"${P3DS_JOBS:-$(nproc)}" >/dev/null
 cp "$SRC/Project_CTR/makerom/bin/"makerom* "$DEST/bin/"
 
 echo "Building bannertool ($BANNERTOOL_TAG)"

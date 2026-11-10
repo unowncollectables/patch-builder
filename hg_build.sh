@@ -253,6 +253,12 @@ step_link() {
 step_cia() {
   [ -f "$FULLDIR/heartgold3ds.elf" ] || { die "nothing linked yet - run the 'link' step first"; return 1; }
   build_env
+  if [ "${P3DS_JOBS:-}" = 1 ]; then
+    bash "$HERE/build_cia_tools.sh" "$CIA_TOOLS" || {
+      hint "The HOME Menu tools could not be built. Uncheck the HOME Menu installer to build the Homebrew Launcher version."
+      return 1
+    }
+  fi
   rm -f "$OUTCIA"      # a leftover .cia must never be copied to the card by mistake
   ( cd "$FULLDIR" && make cia ) || { die "making the .cia failed (error above)"; hint "The HOME Menu (.cia) version failed. The .3dsx still works. Press 'Copy details for help'."; return 1; }
   [ -f "$OUTCIA" ] || { die "no .cia produced"; return 1; }

@@ -23,6 +23,23 @@ class DrivePaths(unittest.TestCase):
             b.IS_WIN = old
 
 
+class LowMemory(unittest.TestCase):
+    def test_single_job_reaches_all_three_build_drivers_only_when_checked(self):
+        for game, info in b.GAMES.items():
+            with self.subTest(game=game):
+                cfg = {info["repo"]: "/home/me/port", "low_memory": True}
+                script = b.build_command(cfg, False, ["needs"], game=game)[-1]
+                self.assertIn("export P3DS_JOBS=1 MAKEFLAGS=-j1", script)
+                self.assertIn(info["script"], script)
+                cfg["low_memory"] = False
+                self.assertNotIn("P3DS_JOBS", b.build_command(cfg, False, ["needs"], game=game)[-1])
+
+    def test_memory_failure_points_to_the_checkbox(self):
+        msg = b.explain("gcc: fatal error: Killed signal terminated program cc1",
+                        "A generic build error", "full")
+        self.assertIn("Use less memory (slower)", msg)
+
+
 class HeartGoldReady(unittest.TestCase):
     def _rom(self, code):
         import tempfile
