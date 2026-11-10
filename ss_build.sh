@@ -175,8 +175,12 @@ step_stage() {
   why=$(rom_problem "$ROM")
   [ -z "$why" ] || { die "$why"; hint "$why"; return 1; }
   s=$(rom_sha1 "$ROM")
-  if [ "$s" = "$WANT_SHA1" ]; then ok "SoulSilver ROM verified (US, SHA1 matches)"
-  else say "  [!]       This SoulSilver dump differs from the one the port is tested with (SHA1 $s). Continuing; if a data step fails, use a clean dump of your cartridge."; fi
+  if [ "$s" != "$WANT_SHA1" ]; then
+    die "SoulSilver ROM SHA1 is $s, expected $WANT_SHA1 (US)."
+    hint "This SoulSilver file does not match the clean US dump the build needs. Dump your cartridge again."
+    return 1
+  fi
+  ok "SoulSilver ROM verified (US, SHA1 matches)"
 }
 
 # ------------------------------------------------------------------------------------------------ build / link / cia
@@ -261,7 +265,13 @@ step_export() {
   local o="$P3DS_OUT/SoulSilver"
   mkdir -p "$o" 2>/dev/null && [ -w "$o" ] || { die "cannot write to the output folder $o"; hint "Could not save the finished game in your output folder. Pick another folder in 'Output folder' and press the button again."; return 1; }
   cp -f "$OUT3DSX" "$o/soulsilver3ds.3dsx" || { die "copy to the output folder failed"; hint "Could not save the finished game in your output folder. Check there is free space, then try again."; return 1; }
-  [ -f "$OUTCIA" ] && [ "${P3DS_CIA:-0}" = 1 ] && cp -f "$OUTCIA" "$o/soulsilver3ds.cia"
+  if [ -f "$OUTCIA" ] && [ "${P3DS_CIA:-0}" = 1 ]; then
+    cp -f "$OUTCIA" "$o/soulsilver3ds.cia" || {
+      die "could not save the HOME Menu installer"
+      hint "Check the free space and permissions on the output folder, then retry the build."
+      return 1
+    }
+  fi
   cat > "$o/How to put this on your 3DS.txt" <<'TXT'
 How to put this on your 3DS
 ===========================

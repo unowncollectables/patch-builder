@@ -270,7 +270,13 @@ step_export() {
   local o="$P3DS_OUT/HeartGold"
   mkdir -p "$o" 2>/dev/null && [ -w "$o" ] || { die "cannot write to the output folder $o"; hint "Could not save the finished game in your output folder. Pick another folder in 'Output folder' and press the button again."; return 1; }
   cp -f "$OUT3DSX" "$o/heartgold3ds.3dsx" || { die "copy to the output folder failed"; hint "Could not save the finished game in your output folder. Check there is free space, then try again."; return 1; }
-  [ -f "$OUTCIA" ] && [ "${P3DS_CIA:-0}" = 1 ] && cp -f "$OUTCIA" "$o/heartgold3ds.cia"
+  if [ -f "$OUTCIA" ] && [ "${P3DS_CIA:-0}" = 1 ]; then
+    cp -f "$OUTCIA" "$o/heartgold3ds.cia" || {
+      die "could not save the HOME Menu installer"
+      hint "Check the free space and permissions on the output folder, then retry the build."
+      return 1
+    }
+  fi
   cat > "$o/How to put this on your 3DS.txt" <<'TXT'
 How to put this on your 3DS
 ===========================

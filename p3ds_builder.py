@@ -10,7 +10,7 @@ Package as an .exe with build_exe.bat (PyInstaller). Standard library only.
 """
 import hashlib, json, os, re, string, subprocess, sys, threading, queue, time, urllib.request, webbrowser
 
-VERSION = "1.3.10"   # bump before tagging a release; compared with the newest GitHub release
+VERSION = "1.3.11"   # bump before tagging a release; compared with the newest GitHub release
 RELEASES_API = "https://api.github.com/repos/unowncollectables/patch-builder/releases/latest"
 RELEASES_PAGE = "https://github.com/unowncollectables/patch-builder/releases/latest"
 
@@ -71,10 +71,7 @@ SS_PIPELINES = {   # the same Advanced buttons for SoulSilver
 }
 
 # Known failure text -> what to tell the user. First match wins; the script's own ##HINT lines win over these.
-SD_STEPS = ("1. Put the SD card in your New 3DS and turn it on.\n"
-            "2. Homebrew Launcher: start Platinum 3DS (file SD:/3ds/platinum3ds/platinum3ds_full.3dsx).\n"
-            "3. Or for a HOME Menu icon: open FBI > SD > cias > platinum3ds.cia > Install.\n"
-            "If you copy by hand: the .3dsx and your .nds (renamed platinum.nds) go in SD:/3ds/platinum3ds/, the .cia goes in SD:/cias/.")
+
 
 WRAP = 720      # text width (pixels) of the window's labels
 
@@ -182,18 +179,6 @@ def wrap_script(script, root):
     return ["pkexec", "bash", "-c", script] if not sudo_ok() and which("pkexec") else ["sudo", "-n", "bash", "-c", script]
 
 
-def sd_mount_command(sd):
-    """Windows only: argv that mounts drive X: at /mnt/x inside WSL if WSL cannot see it yet (None if not a drive path)."""
-    m = re.match(r"^([A-Za-z]):", sd or "")
-    if not m:
-        return None
-    L = m.group(1).lower()
-    script = ('d=/mnt/%s; mkdir -p "$d"; if [ -z "$(ls -A "$d" 2>/dev/null)" ]; then umount "$d" 2>/dev/null; '
-              'mount -t drvfs %s: "$d" && echo "  [ok]      SD card %s: mounted at $d" '
-              '|| echo "  (could not mount %s: in WSL)"; else echo "  [ok]      SD card %s: is visible at $d"; fi; true') % (L, L.upper(), L.upper(), L.upper(), L.upper())
-    return ["wsl.exe", "-u", "root", "--", "bash", "-c", script]
-
-
 def game_out_dir(repo, game):
     """Folder holding the built game. A Linux/WSL path is joined with '/', a Windows path with '\\'."""
     sub = [SD_LAYOUT[game][0], "full"]
@@ -237,11 +222,27 @@ def _sha1(path):
     return h.hexdigest()
 
 
-def sd_copy(game, out_dir, sd, rom, log=print):
+def _copy_to_card(src, dest, *, verify=False):
+    """Publish a complete file on the card, leaving the old file if copying fails."""
+    import shutil
+    import tempfile
+    fd, tmp = tempfile.mkstemp(prefix=".p3ds-", suffix=".tmp", dir=os.path.dirname(dest))
+    os.close(fd)
+    try:
+        shutil.copyfile(src, tmp)
+        if verify and _sha1(src) != _sha1(tmp):
+            raise OSError("the copy did not match the original")
+        os.replace(tmp, dest)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+
+def sd_copy(game, out_dir, sd, rom, log=print, *, include_cia=True):
     """Copy a finished game from the Windows output folder to the SD card, from Windows (no WSL involved).
     Backs up the save first, keeps one .prev of the old .3dsx, copies the user's .nds only if the card has none.
     Never deletes or overwrites a save. Returns (ok, message, sd game folder)."""
-    import shutil, time
+    import time
     folder, dotx, cia, nds, sav = SD_LAYOUT[game]
     name = GAMES[game]["name"]
     src = os.path.join(out_dir, name)
@@ -254,24 +255,23 @@ def sd_copy(game, out_dir, sd, rom, log=print):
         os.makedirs(d, exist_ok=True)
         if os.path.isfile(os.path.join(d, sav)):
             os.makedirs(os.path.join(d, "save_backups"), exist_ok=True)
-            bk = os.path.join(d, "save_backups", "%s_%s.sav" % (sav[:-4], time.strftime("%Y%m%d_%H%M%S")))
-            shutil.copy2(os.path.join(d, sav), bk)
+            bk = os.path.join(d, "save_backups", "%s_%s_%09d.sav" %
+                              (sav[:-4], time.strftime("%Y%m%d_%H%M%S"), time.time_ns() % 1_000_000_000))
+            _copy_to_card(os.path.join(d, sav), bk)
             log("  [ok]      save backed up to %s\n" % bk)
         if os.path.isfile(os.path.join(d, dotx)):
-            shutil.copy2(os.path.join(d, dotx), os.path.join(d, dotx + ".prev"))
-        shutil.copyfile(os.path.join(src, dotx), os.path.join(d, dotx))
-        if _sha1(os.path.join(src, dotx)) != _sha1(os.path.join(d, dotx)):
-            return False, "Copying to the SD card came out different. Re-seat the card and try again; it may be failing.", d
+            _copy_to_card(os.path.join(d, dotx), os.path.join(d, dotx + ".prev"))
+        _copy_to_card(os.path.join(src, dotx), os.path.join(d, dotx), verify=True)
         log("  [ok]      %s copied to %s\n" % (dotx, d))
         if rom and os.path.isfile(rom) and not os.path.isfile(os.path.join(d, nds)):
-            shutil.copyfile(rom, os.path.join(d, nds))
+            _copy_to_card(rom, os.path.join(d, nds))
             log("  [ok]      your game file copied as %s\n" % nds)
         fb = os.path.join(src, "followers.bin")
         if game == "platinum" and os.path.isfile(fb):
-            shutil.copyfile(fb, os.path.join(d, "followers.bin"))
-        if os.path.isfile(os.path.join(src, cia)):
+            _copy_to_card(fb, os.path.join(d, "followers.bin"))
+        if include_cia and os.path.isfile(os.path.join(src, cia)):
             os.makedirs(os.path.join(sd, "cias"), exist_ok=True)
-            shutil.copyfile(os.path.join(src, cia), os.path.join(sd, "cias", cia))
+            _copy_to_card(os.path.join(src, cia), os.path.join(sd, "cias", cia))
             log("  [ok]      HOME Menu installer copied to %s (install it with FBI)\n" % os.path.join(sd, "cias", cia))
     except PermissionError:
         return False, "The SD card is write-protected or in use. Slide its lock switch up, plug it back in, and try again.", d
@@ -541,7 +541,7 @@ def find_nds(want):
     return ""
 
 
-def rom_report(path, want="platinum"):
+def rom_report(path, want="platinum", *, for_followers=False):
     """(ok, message) for a picked .nds. Mirrors rom_problem in p3ds_build.sh."""
     if not path:
         return None, ""
@@ -576,12 +576,13 @@ def rom_report(path, want="platinum"):
             if code.startswith("IPG") or code.startswith("IPK"):
                 return False, "That is HeartGold/SoulSilver from another region (%s). It needs US SoulSilver (IPGE)." % code
             return False, "That is not Pokemon SoulSilver."
-        h = hashlib.sha1()
-        with open(path, "rb") as f:
-            for chunk in iter(lambda: f.read(1 << 20), b""):
-                h.update(chunk)
-        if h.hexdigest() != SS_SHA1:
-            return True, "US SoulSilver, but not the exact dump the port is tested with. It may still work; if the build fails, use a clean dump."
+        if for_followers:
+            return True, "US SoulSilver file for Platinum's following Pokemon."
+        try:
+            if _sha1(path) != SS_SHA1:
+                return False, "This SoulSilver file does not match the clean US dump the build needs. Dump your cartridge again."
+        except OSError as e:
+            return False, "Cannot read that file (%s)." % e.strerror
         return True, "Correct game: Pokemon SoulSilver US."
     if not re.match(r"^[A-Z0-9]{4}$", code):
         return False, "That file is not a DS game (.nds)."
@@ -717,7 +718,7 @@ def load_settings():
     out["legacy"] = bool(d.get("legacy"))
     out["cia"] = bool(d.get("cia", True))
     out["offline"] = bool(d.get("offline"))   # beginners want both the .3dsx and the HOME Menu .cia
-    out["want_plat"] = bool(d.get("want_plat", True))
+    out["want_plat"] = bool(d.get("want_plat", out["platinum"]))
     out["want_ss"] = bool(d.get("want_ss", False))
     out["want_hg"] = bool(d.get("want_hg", False))
     out["autofind"] = bool(d.get("autofind", False))
@@ -802,7 +803,7 @@ def run_gui():
     # Soft grey theme (easy on the eyes): grey background, light grey text.
     BG, PANEL, FG = "#2f3237", "#3b3f45", "#e1e3e6"
     GOOD, BAD, MUTED = "#7fd48a", "#ff8a80", "#a9aeb5"
-    GREEN, GREEN_DIM, BLUE, BLUE_DIM = "#2f8f4e", "#4d6b57", "#2f6fb5", "#4a5f78"
+    GREEN, GREEN_DIM = "#2f8f4e", "#4d6b57"
     big = ("Segoe UI", 11) if IS_WIN else ("TkDefaultFont", 11)
     head = ("Segoe UI", 16, "bold") if IS_WIN else ("TkDefaultFont", 16, "bold")
     style = ttk.Style()
@@ -875,8 +876,7 @@ def run_gui():
         stripe_r.configure(bg=b)
         hdr_title.configure(fg=b if k != "both" else a)
         hdr_sub.configure(text="Building: " + name if k != "none" else "Tick a game below to start")
-    ttk.Label(outer, text="Just a few steps: tick a game, point to your game file, pick your SD card, press the green button. "
-                          "Your game files never leave this computer.",
+    ttk.Label(outer, text="Choose a game and its .nds file. Add an SD card if you want the builder to copy the game to it.",
               foreground=MUTED, wraplength=WRAP).pack(anchor="w", pady=(0, 10))
 
     checks = {}
@@ -908,98 +908,56 @@ def run_gui():
         return row
 
     ttk.Separator(outer).pack(fill="x", pady=(0, 8))
-    ttk.Label(outer, text="1.  Which game(s) do you want on your 3DS?", style="Step.TLabel").pack(anchor="w")
+    ttk.Label(outer, text="Choose your game", style="Step.TLabel").pack(anchor="w")
     grow = ttk.Frame(outer)
     grow.pack(fill="x", pady=(2, 10))
     ttk.Checkbutton(grow, text="Pokemon Platinum", variable=want_plat).pack(side="left", padx=(0, 18))
     ttk.Checkbutton(grow, text="Pokemon SoulSilver", variable=want_ss).pack(side="left", padx=(0, 18))
     ttk.Checkbutton(grow, text="Pokemon HeartGold (experimental)", variable=want_hg).pack(side="left")
-    ttk.Label(grow, text="  (any mix is fine)", foreground=MUTED).pack(side="left")
-    ttk.Label(outer, text="HeartGold is a separate game with its own folder, save and HOME Menu icon. It never touches SoulSilver. "
-                          "It is new and experimental: expect bugs.",
-              foreground=MUTED, wraplength=WRAP).pack(anchor="w", pady=(0, 4))
-    ttk.Label(outer, text="Optional: following Pokemon for Platinum (your Pokemon walks behind you, like in HeartGold/SoulSilver). "
-                          "It needs your SoulSilver game file too (box 2b). You do not have to build SoulSilver for this.",
-              foreground=MUTED, wraplength=WRAP).pack(anchor="w", pady=(0, 8))
-
     games_area = ttk.Frame(outer)
     games_area.pack(fill="x")
-    field(games_area, "platinum", "2a.  Your Pokemon Platinum game file (.nds, US Rev 1)", "file")
-    field(games_area, "soulsilver", "2b.  Your Pokemon SoulSilver game file (.nds, US). Optional for Platinum: adds following Pokemon", "file")
-    field(games_area, "heartgold", "2c.  Your Pokemon HeartGold game file (.nds, US)", "file")
+    field(games_area, "platinum", "Platinum game file (.nds, US Rev 1)", "file")
+    field(games_area, "soulsilver", "SoulSilver game file (.nds, US)", "file")
+    field(games_area, "heartgold", "HeartGold game file (.nds, US)", "file")
     def do_autofind(*_):
         if not autofind.get():
             return
-        found = []
-        for g in ("platinum", "soulsilver", "heartgold"):
+        for g in GAMES:
             if not vars_[g].get().strip():
                 f = find_nds(g)
                 if f:
                     vars_[g].set(os.path.normpath(f) if IS_WIN else f)
-                    found.append("%s: %s" % (GAMES[g]["name"], f))
-        if found:
-            messagebox.showinfo("Game file found", "Found and filled in:\n\n" + "\n".join(found) +
-                                "\n\nIt is only read, never changed.")
     ttk.Checkbutton(games_area, text="Look for my game files automatically (Downloads, Desktop, Documents)",
                     variable=autofind, command=do_autofind).pack(anchor="w", pady=(0, 6))
     follow_note = ttk.Label(games_area, text="", foreground=MUTED, wraplength=WRAP)
-    field(outer, "out", "3.  Where to save the finished game on this PC (the .cia and .3dsx always go here)", "dir")
-    ttk.Label(outer, text="Tip: the finished files always land here too, so if the SD step fails you can copy them by hand.",
-              foreground=MUTED, wraplength=WRAP).pack(anchor="w", pady=(0, 8))
-    sd_row = field(outer, "sd", "4.  Your 3DS SD card (optional, plugged into this computer)", "dir")
-    ttk.Label(outer, text="Tip: switch the 3DS off, take the card out, plug it into this PC, press \"Find it\". "
-              "No card yet? Leave this empty and copy the files later.", foreground=MUTED, wraplength=WRAP).pack(anchor="w", pady=(0, 8))
+    field(outer, "out", "Save finished files to", "dir")
+    sd_row = field(outer, "sd", "Copy to a 3DS SD card (optional)", "dir")
 
     def find_sd():
         cards = find_sd_cards()
-        if cards:
+        if len(cards) == 1:
             vars_["sd"].set(cards[0])
-            if len(cards) > 1:
-                messagebox.showinfo("SD card", "Found more than one 3DS card: %s\nUsing %s." % (", ".join(cards), cards[0]))
+        elif cards:
+            messagebox.showinfo("Choose an SD card", "More than one 3DS card was found: %s. Use Browse to pick one." %
+                                ", ".join(cards))
         else:
             messagebox.showinfo("SD card", "No 3DS SD card found. Plug it in (it has a 'Nintendo 3DS' folder) and try again, "
                                            "or use Browse.")
-    ttk.Button(sd_row, text="Find it", command=find_sd).pack(side="left", padx=(6, 0))
-    ttk.Checkbutton(outer, text="Also make the installer for the HOME Menu (.cia, install it with FBI). Adds a few minutes.",
-                    variable=want_cia).pack(anchor="w", pady=(0, 6))
+    ttk.Button(sd_row, text="Find SD card", command=find_sd).pack(side="left", padx=(6, 0))
+    ttk.Button(sd_row, text="Clear", command=lambda: vars_["sd"].set("")).pack(side="left", padx=(6, 0))
+    ttk.Checkbutton(outer, text="Also make a HOME Menu installer (.cia)", variable=want_cia).pack(anchor="w", pady=(0, 6))
 
     ttk.Separator(outer).pack(fill="x", pady=(6, 8))
-    ttk.Label(outer, text="5.  Press the green button and wait. The first build takes a while (up to an hour); "
-              "later ones are much faster. You can leave it running.", style="Step.TLabel", wraplength=WRAP).pack(anchor="w", pady=(4, 0))
-    go = tk.Button(outer, text="Build my game and put it on the SD card", font=(big[0], 15, "bold"), bg=GREEN, fg="white",
+    go = tk.Button(outer, text="", font=(big[0], 15, "bold"), bg=GREEN, fg="white",
                    activebackground="#3aa05c", activeforeground="white", relief="flat", padx=20, pady=10,
                    cursor="hand2", command=lambda: start("auto"))
     go.pack(fill="x", pady=(4, 2))
-    upd = tk.Button(outer, text="Get the newest game updates from GitHub, then rebuild and copy",
-                    font=(big[0], 12, "bold"), bg=BLUE, fg="white", activebackground="#3a7fc8", activeforeground="white",
-                    relief="flat", padx=16, pady=6, cursor="hand2", command=lambda: start("update"))
-    upd.pack(fill="x", pady=(0, 6))
-    AMBER, AMBER_HOT = "#b9770e", "#ffb020"
-    clean_btn = tk.Button(outer, text="Clean build tree  (fixes odd, stuck or out-of-date builds)", font=(big[0], 12, "bold"),
-                          bg=AMBER, fg="white", activebackground=AMBER_HOT, activeforeground="black", relief="flat",
-                          padx=16, pady=6, cursor="hand2", command=lambda: start("cleantree"))
-    clean_btn.pack(fill="x", pady=(0, 4))
-    ttk.Label(outer, text="Green: the normal button, builds what you ticked and copies it to the SD card. "
-              "Blue: the same, but downloads the newest game code first. "
-              "Amber: deletes the temporary build folder (saves, game files and SD card are kept) so the next build starts fresh.",
+    ttk.Label(outer, text="The first build can take an hour or more. Later builds are quicker.",
               foreground=MUTED, wraplength=WRAP).pack(anchor="w", pady=(0, 4))
-    clean_hint = tk.Label(outer, text="", bg=BG, fg=AMBER_HOT, font=(big[0], 11, "bold"), wraplength=WRAP, justify="left", anchor="w")
-    clean_hint.pack(fill="x", pady=(0, 4))
-    clean = {"need": False, "on": False}
+    clean_hint = tk.Label(outer, text="", bg=BG, fg="#ffb020", font=(big[0], 11, "bold"),
+                          wraplength=WRAP, justify="left", anchor="w")
+    clean_hint.pack(fill="x")
 
-    def set_clean_need(need, why=""):
-        """Light the clean button up (and make it blink) when a clean build looks like the fix."""
-        clean["need"] = need
-        clean_hint.configure(text=why if need else "")
-        if not need:
-            clean_btn.configure(bg=AMBER, fg="white")
-
-    def blink_clean():
-        if clean["need"] and not st["busy"]:
-            clean["on"] = not clean["on"]
-            clean_btn.configure(bg=AMBER_HOT if clean["on"] else AMBER, fg="black" if clean["on"] else "white")
-        root.after(600, blink_clean)
-    root.after(600, blink_clean)
     newer_lbl = tk.Label(outer, text="", fg="#7db7ff", bg=BG, cursor="hand2", font=(big[0], 11, "bold", "underline"))
 
     def check_newer():
@@ -1064,7 +1022,7 @@ def run_gui():
         except Exception as e:
             messagebox.showinfo("Folder", "%s\n\n(%s)" % (p, e))
     ttk.Button(brow, text="Copy details for help", command=copy_details).pack(side="left")
-    open_btn = ttk.Button(brow, text="Open game folder")
+    open_btn = ttk.Button(brow, text="Open output folder")
 
     # ---- details + advanced (folded away) ----------------------------------------------------------------
     folds = ttk.Frame(outer)
@@ -1090,7 +1048,7 @@ def run_gui():
                             "Nothing to remove: this builder has nothing set to start at boot.")
     if IS_WIN:
         ttk.Button(adv, text="Clean up boot entries (stops it from starting at boot)", command=do_clean_boot).pack(anchor="w", pady=(6, 0))
-    ttk.Checkbutton(adv, text="Offline: do not check GitHub for game updates on the green button (the blue button still does)",
+    ttk.Checkbutton(adv, text="Offline: skip game updates during a normal build",
                     variable=offline).pack(anchor="w")
     ttk.Label(adv, text="Maintenance tools. You normally never need these: the green button does everything. "
               "Each one is explained next to its button.", foreground=MUTED, wraplength=WRAP).pack(anchor="w", pady=(10, 4))
@@ -1101,8 +1059,9 @@ def run_gui():
     for i, (text, pipe, why) in enumerate((
             ("Check my setup", "check", "Only looks, changes nothing. Shows what is installed and what is missing. Use it first if something fails."),
             ("Test my patches (Platinum)", "test", "Checks that your Platinum patches still fit the game code. Nothing is built or changed."),
-            ("Quick rebuild", "quick", "Re-applies patches and rebuilds only what changed, then copies it. Fast. Use after a small change."),
-            ("Reinstall build tools", "install", "Downloads and installs the compilers again. Use if the check says a tool is broken or missing."),
+            ("Update and build", "update", "Checks GitHub for new game code even when Offline is selected."),
+            ("Quick rebuild", "quick", "Rebuilds what changed after a small local edit."),
+            ("Check and repair tools", "install", "Installs missing build tools and Python modules."),
             ("Rebuild everything (slow)", "full", "Rebuilds the whole game from scratch. Takes a long time. Use if a normal build gives odd results."),
             ("Delete build files (slow next time)", "cleantree", "Deletes the temporary build folder, so the next build starts from zero. Your saves, game files and SD card are kept."),
             ("Delete old builds", "clean", "Removes old finished builds to free disk space. You are asked before anything is deleted."))):
@@ -1142,11 +1101,6 @@ def run_gui():
         log.configure(state="disabled")
 
     def show_banner(ok, text, folder=""):
-        if ok and st.get("head"):
-            text = text + "\nBuilt the latest version: " + "; ".join(
-                "%s commit %s (%s): %s" % (GAMES.get(g, {}).get("name", g), h[0][:7], h[1], h[2]) for g, h in st["head"].items())
-        if st.get("news"):
-            text = "Game code on GitHub - " + "; ".join(st["news"]) + "\n" + text
         banner.configure(text=text, bg="#27472f" if ok else "#5a2f2f", fg=GOOD if ok else BAD)
         banner.pack(fill="x", pady=(8, 0), before=folds)
         brow.pack(fill="x", pady=(4, 0), before=folds)
@@ -1161,7 +1115,7 @@ def run_gui():
         brow.pack_forget()
 
     # ---- live checks next to each box ------------------------------------------------------------------
-    rom_cache = {}
+    rom_cache, rom_pending = {}, set()
 
     def set_check(key, ok, text):
         checks[key].configure(text=(("\u2714 " if ok else "\u2716 ") if ok is not None else "") + text,
@@ -1172,19 +1126,28 @@ def run_gui():
         if not p:
             set_check(key, None, "Required for this game." if dict(wants)[key].get() else "")
             return
-        if (p, key) in rom_cache:     # keyed by game too: the same file can be checked for the other game's box
-            set_check(key, *rom_cache[(p, key)])
+        followers = key == "soulsilver" and not want_ss.get()
+        check = (p, key, followers)
+        if check in rom_cache:
+            set_check(key, *rom_cache[check])
             return
         set_check(key, None, "Checking the file...")
+        if check in rom_pending:
+            return
+        rom_pending.add(check)
 
         def work():
-            rom_cache[(p, key)] = rom_report(p, key)
-            q.put(("recheck", key, None))
+            try:
+                result = rom_report(p, key, for_followers=followers)
+            except OSError as e:
+                result = False, "Cannot read that file (%s)." % e.strerror
+            q.put(("recheck", check, result))
         threading.Thread(target=work, daemon=True).start()
 
     def refresh(*_):
         # a game's boxes only show while its tick is on (the Platinum box also takes SoulSilver's ROM for following Pokemon)
         follow_note.pack_forget()
+        go.configure(text="Build and install to SD" if vars_["sd"].get().strip().strip('"') else "Build and save to PC")
         apply_theme()
         for key, var in wants:
             # the SoulSilver box also shows for Platinum alone: that file is what adds following Pokemon
@@ -1192,12 +1155,8 @@ def run_gui():
                 boxes[key].pack(fill="x", pady=(0, 10))
             else:
                 boxes[key].pack_forget()
-        if want_plat.get():
-            if vars_["soulsilver"].get().strip():
-                follow_note.configure(text="Platinum will get following Pokemon from your SoulSilver file.")
-            else:
-                follow_note.configure(text="Platinum will build without following Pokemon. That is fine. To add them, pick your "
-                                           "SoulSilver file in 2b (optional).")
+        if want_plat.get() and not want_ss.get():
+            follow_note.configure(text="Optional for Platinum: a SoulSilver file adds following Pokemon.")
             follow_note.pack(anchor="w", pady=(0, 10))
         check_rom("platinum")
         check_rom("soulsilver")
@@ -1218,6 +1177,7 @@ def run_gui():
         c["want_plat"], c["want_ss"], c["want_hg"], c["cia"] = want_plat.get(), want_ss.get(), want_hg.get(), want_cia.get()
         c["offline"] = offline.get()
         c["autofind"] = autofind.get()
+        c["legacy"] = legacy.get()
         c["out"] = c.get("out") or DEFAULT_OUT
         return c
 
@@ -1226,8 +1186,6 @@ def run_gui():
         for x in adv_buttons:
             x.configure(state="disabled" if b else "normal")
         go.configure(state="disabled" if b else "normal", bg=GREEN_DIM if b else GREEN)
-        upd.configure(state="disabled" if b else "normal", bg=BLUE_DIM if b else BLUE)
-        clean_btn.configure(state="disabled" if b else "normal", bg="#6b5a3a" if b else AMBER, fg="white")
         cancel_btn.configure(state="normal" if b else "disabled")
 
     def cancel():
@@ -1273,8 +1231,6 @@ def run_gui():
                 st.setdefault("clean", []).append(line.strip()[8:])
                 continue
             if line.startswith("##NEWS:"):
-                _, g, news = line.strip().split(":", 2)
-                st.setdefault("news", []).append("%s: %s" % (GAMES.get(g, {}).get("name", g), news))
                 continue
             if line.startswith("##HEAD:"):
                 _, g, rest = line.strip().split(":", 2)
@@ -1303,10 +1259,7 @@ def run_gui():
         return rc == 0 and not st["cancel"], needs, rc
 
     def run_steps(c, game, needs_root, steps):
-        if False:   # v1.0.8: the SD copy is done from Windows (sd_copy), no WSL mount needed
-            # A card plugged in after WSL started is often not visible under /mnt/<letter>; mount it (as admin) first.
-            run_argv(sd_mount_command(c["sd"]), "make the SD card visible to the builder (as admin)", game)
-        ok, needs, _ = run_argv(build_command(c, needs_root, steps, legacy.get(), game),
+        ok, needs, _ = run_argv(build_command(c, needs_root, steps, c["legacy"], game),
                                 "%s: %s%s" % (GAMES[game]["name"], " ".join(steps), " (as admin)" if needs_root else ""), game)
         return ok, needs
 
@@ -1367,9 +1320,12 @@ def run_gui():
         ok = True
         if IS_WIN and c.get("sd") and pipe in ("auto", "full", "quick") and not st["cancel"]:
             for g in selected_games(c):
+                if st["cancel"]:
+                    return False
                 q.put(("log", "\n$ copy %s to the SD card (from Windows)\n" % GAMES[g]["name"], None))
                 q.put(("step", "deploy", None))
-                good, msg, d = sd_copy(g, c.get("out") or DEFAULT_OUT, c["sd"], c.get(g), lambda t: q.put(("log", t, None)))
+                good, msg, d = sd_copy(g, c["out"], c["sd"], c.get(g), lambda t: q.put(("log", t, None)),
+                                       include_cia=c["cia"])
                 if not good:
                     st["hint"], st["failed"] = msg, "deploy"
                     q.put(("log", "ERROR: " + msg + "\n", "bad"))
@@ -1465,7 +1421,7 @@ def run_gui():
                         vars_[g].set(os.path.normpath(f) if IS_WIN else f)
                         c[g] = vars_[g].get()
         if not games:
-            messagebox.showwarning("Which game?", "Tick at least one game in step 1.")
+            messagebox.showwarning("Which game?", "Choose at least one game.")
             return
         for g in games:
             rok, rmsg = project_report(c[GAMES[g]["repo"]], g)
@@ -1478,27 +1434,30 @@ def run_gui():
                 if not c[g]:
                     messagebox.showwarning("Game file", "Pick your Pokemon %s .nds file first." % GAMES[g]["name"])
                     return
-                ok, text = rom_cache.get((c[g], g)) or rom_report(c[g], g)
+                ok, text = rom_cache.get((c[g], g, False)) or rom_report(c[g], g)
                 if ok is False:
                     messagebox.showwarning("%s file" % GAMES[g]["name"], text)
                     return
-            if c["soulsilver"] and "soulsilver" not in games:      # Platinum + a SoulSilver file = following Pokemon
-                ok, text = rom_cache.get((c["soulsilver"], "soulsilver")) or rom_report(c["soulsilver"], "soulsilver")
+            if "platinum" in games and c["soulsilver"] and "soulsilver" not in games:
+                ok, text = rom_cache.get((c["soulsilver"], "soulsilver", True)) or rom_report(
+                    c["soulsilver"], "soulsilver", for_followers=True)
                 if ok is False:
                     messagebox.showwarning("SoulSilver file", text + "\n\nClear that box to build without following Pokemon.")
                     return
         if pipe in ("auto", "full", "quick") and c["sd"]:
             ok, text = sd_report(c["sd"])
-            if ok is False and not messagebox.askyesno("SD card", text + "\n\nCopy the game there anyway?"):
-                return
-        if pipe in ("auto", "full", "quick") and not c["sd"]:
-            if not messagebox.askyesno("No SD card", "No SD card is picked, so the game will only be saved in your output folder "
-                                                     "(not copied to a card).\n\nContinue without the SD card?"):
-                return
+            if ok is False:
+                if not os.path.isdir(c["sd"]) or os.path.basename(os.path.normpath(c["sd"])).lower() in ("3ds", "nintendo 3ds"):
+                    messagebox.showwarning("SD card", text + "\n\nChoose the top of the card or clear the SD card field to save to your PC.")
+                    return
+                if not messagebox.askyesno("SD card", text + "\n\nCopy the game there anyway?"):
+                    return
         if pipe in ("auto", "full"):
             warn = preflight_problems(c["out"], c.get("offline"))
             if warn and not messagebox.askyesno("Before we start", "\n\n".join(warn) + "\n\nContinue anyway?"):
                 return
+        # A first run may restart Windows before any build steps run.
+        save_settings(dict(c, offline=offline.get()))
         w = wsl_state()
         if w == "no-virt":
             wsl_virt_help()
@@ -1555,11 +1514,8 @@ def run_gui():
             return
         if pipe == "cleantree" and not messagebox.askokcancel("Clean build tree", "This deletes the build tree (pspoke/.work) for the selected game(s), so the next build starts from scratch and takes a long time. Your saves, ROMs, downloaded sources and SD card are kept. Continue?"):
             return
-        d = dict(c)
-        d["legacy"] = legacy.get()
-        d["offline"] = offline.get()
-        save_settings(d)
-        st.update(cancel=False, hint="", failed="", installed=[], project={}, cia=c["cia"], news=[], head={}, remote={})
+        st.update(cancel=False, hint="", failed="", installed=[], project={}, cia=c["cia"], out=c["out"],
+                  head={}, remote={})
         hide_banner()
         log.configure(state="normal")
         log.delete("1.0", "end")
@@ -1581,7 +1537,7 @@ def run_gui():
                 f.write(text)
         except OSError:
             pass
-        c = current_cfg()
+        outd = st["out"]
         if st["cancel"]:
             status.set("Cancelled.")
             bar_color("#8a8f96")
@@ -1592,15 +1548,13 @@ def run_gui():
             status.set("Stopped.")
             bar_color("#d9534f")
             pct_var.set("Stopped at %d%%. Read the red box below, then press 'Copy details for help' to share it." % int(anim["shown"]))
-            show_banner(False, explain(text, st["hint"], st["failed"]))
+            show_banner(False, explain(text, st["hint"], st["failed"]), outd if st["failed"] == "deploy" else "")
             toggle("details", True)
-            if pipe != "cleantree" and (st["failed"] in ("build", "link", "full", "relink", "patches", "cia") or STALE_RE.search(text)):
-                set_clean_need(True, "The last build failed while compiling. If it fails again, press the amber button: "
-                                     "a clean rebuild fixes most odd or out-of-date builds (it takes longer).")
+            clean_hint.configure(text="If the error mentions stale build files, use Advanced → Delete build files, then build again."
+                                 if pipe != "cleantree" and STALE_RE.search(text) else "")
             return
-        set_clean_need(False)
-        if "still holds a raw" in text and pipe != "cleantree":
-            set_clean_need(True, "The build finished but warned about old build files. Press the amber button, then build again.")
+        clean_hint.configure(text="The build warned about old files. Use Advanced → Delete build files, then build again."
+                             if "still holds a raw" in text and pipe != "cleantree" else "")
         set_target(100)
         bar_color("#4caf6a")
         pct_var.set("Done!  100%")
@@ -1616,22 +1570,10 @@ def run_gui():
         elif st["installed"]:
             names = " and ".join("%s 3DS" % GAMES[g]["name"] for g, _ in st["installed"] if g)
             more = " To use the HOME Menu version instead, install the .cia from the cias folder on the card with FBI." if st["cia"] else ""
-            try:
-                from tkinter import messagebox
-                messagebox.showinfo("All done!", "Your game is on the SD card.\n\n" + SD_STEPS)
-            except Exception:
-                pass
-            outd = c.get("out") or DEFAULT_OUT
-            show_banner(True, "Installed! Put the SD card back in your New 3DS, open the Homebrew Launcher and start %s.%s A copy is also saved in %s." % (names, more, outd), outd)
+            show_banner(True, "Installed to your SD card. On your New 3DS, open Homebrew Launcher and start %s.%s" %
+                        (names, more), outd)
         else:
-            outd = c.get("out") or DEFAULT_OUT
-            show_banner(True, "Built! No SD card was picked. Your game is saved in: " + outd +
-                        "  (see 'How to put this on your 3DS.txt' there)", outd)
-            try:
-                from tkinter import messagebox
-                messagebox.showinfo("Copy these files to your SD card", SD_STEPS + "\n\nYour finished game is saved in:\n" + outd)
-            except Exception:
-                pass
+            show_banner(True, "Saved to %s. Open the output folder for the game files and instructions." % outd, outd)
 
     def tick():
         """Once a second while busy: creep the bar inside the current step and show elapsed time + last output line."""
@@ -1708,11 +1650,13 @@ def run_gui():
                 elif kind == "newer":
                     newer_lbl.configure(text="A newer builder is available (%s, you have v%s). Click here to download it." % (a, VERSION))
                     newer_lbl.bind("<Button-1>", lambda e, u=b: webbrowser.open(u))
-                    newer_lbl.pack(anchor="w", after=upd, pady=(0, 6))
+                    newer_lbl.pack(anchor="w", after=go, pady=(0, 6))
                 elif kind == "project":
                     vars_[GAMES[a]["repo"]].set(b)
                 elif kind == "recheck":
-                    refresh()
+                    rom_pending.discard(a)
+                    rom_cache[a] = b
+                    check_rom(a[1])
                 elif kind == "done":
                     finish(a, b)
         except queue.Empty:
@@ -1724,6 +1668,7 @@ def run_gui():
             if not messagebox.askyesno("Still building", "A build is running. Stop it and close?"):
                 return
             cancel()
+        save_settings(current_cfg())
         root.destroy()
     root.protocol("WM_DELETE_WINDOW", on_close)
 

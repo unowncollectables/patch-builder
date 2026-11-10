@@ -79,7 +79,53 @@ class HeartGoldReady(unittest.TestCase):
         self.assertEqual({n: open(os.path.join(ssd, n), "rb").read() for n in os.listdir(ssd)}, before)
 
 
+class SoulSilverReady(unittest.TestCase):
+    def test_build_requires_clean_dump_but_platinum_followers_accept_us_file(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from unittest.mock import patch
+        with TemporaryDirectory() as tmp:
+            rom = Path(tmp) / "soulsilver.nds"
+            rom.write_bytes(b"POKEMON SS".ljust(12, bytes(1)) + b"IPGE" + bytes(0x200))
+            self.assertFalse(b.rom_report(rom, "soulsilver")[0])
+            self.assertTrue(b.rom_report(rom, "soulsilver", for_followers=True)[0])
+            with patch.object(b, "SS_SHA1", b._sha1(rom)):
+                self.assertTrue(b.rom_report(rom, "soulsilver")[0])
+
+
 class SdCopy(unittest.TestCase):
+    def test_unchecked_cia_does_not_copy_old_installer(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as tmp:
+            out, sd = Path(tmp) / "out", Path(tmp) / "sd"
+            src = out / "SoulSilver"
+            src.mkdir(parents=True)
+            sd.mkdir()
+            (src / "soulsilver3ds.3dsx").write_bytes(b"game")
+            (src / "soulsilver3ds.cia").write_bytes(b"old installer")
+            ok, msg, _ = b.sd_copy("soulsilver", out, sd, None, log=lambda _: None, include_cia=False)
+            self.assertTrue(ok, msg)
+            self.assertFalse((sd / "cias").exists())
+
+    def test_failed_copy_keeps_the_previous_file(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from unittest.mock import patch
+
+        def fail_mid_copy(_src, dest):
+            Path(dest).write_bytes(b"partial")
+            raise OSError("card removed")
+
+        with TemporaryDirectory() as tmp:
+            src, dest = Path(tmp) / "source", Path(tmp) / "game.3dsx"
+            src.write_bytes(b"new game")
+            dest.write_bytes(b"previous game")
+            with patch("shutil.copyfile", side_effect=fail_mid_copy), self.assertRaises(OSError):
+                b._copy_to_card(src, dest, verify=True)
+            self.assertEqual(dest.read_bytes(), b"previous game")
+            self.assertEqual(set(Path(tmp).iterdir()), {src, dest})
+
     def test_copy_keeps_save_and_backs_it_up(self):
         import tempfile
         t = tempfile.mkdtemp()
