@@ -23,6 +23,38 @@ class DrivePaths(unittest.TestCase):
             b.IS_WIN = old
 
 
+class BuilderUpdate(unittest.TestCase):
+    def test_asset_requires_the_official_url_and_checksum(self):
+        tag = "v1.3.99"
+        url = b.RELEASES_PAGE.removesuffix("/latest") + "/download/" + tag + "/Pokemon3DSBuilder.exe"
+        asset = {"browser_download_url": url, "digest": "sha256:" + "a" * 64, "size": 123, "state": "uploaded"}
+        self.assertEqual(b.update_asset({"tag_name": tag, "assets": [asset]}), (url, "a" * 64, 123))
+        for changed in ({"browser_download_url": "https://example.org/update.exe"}, {"digest": None}, {"size": 0}):
+            self.assertIsNone(b.update_asset({"tag_name": tag, "assets": [dict(asset, **changed)]}))
+
+    def test_update_rejects_a_bad_checksum_and_cleans_up(self):
+        import hashlib
+        import io
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from unittest.mock import patch
+
+        with TemporaryDirectory() as tmp:
+            exe = Path(tmp) / "Pokemon3DSBuilder.exe"
+            exe.write_bytes(b"existing")
+            url = "https://github.com/example/update.exe"
+            with patch.object(b.urllib.request, "urlopen", return_value=io.BytesIO(b"bad")):
+                with self.assertRaisesRegex(OSError, "checksum"):
+                    b.stage_update((url, "0" * 64, 3), exe)
+            self.assertEqual(list(Path(tmp).iterdir()), [exe])
+            payload = b"verified"
+            with patch.object(b.urllib.request, "urlopen", return_value=io.BytesIO(payload)):
+                staged = b.stage_update((url, hashlib.sha256(payload).hexdigest(), len(payload)), exe)
+            self.assertEqual(staged.parent, exe.parent)
+            self.assertEqual(staged.read_bytes(), payload)
+            self.assertEqual(exe.read_bytes(), b"existing")
+
+
 class LowMemory(unittest.TestCase):
     def test_single_job_reaches_all_three_build_drivers_only_when_checked(self):
         for game, info in b.GAMES.items():

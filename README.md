@@ -1,173 +1,105 @@
-# Pokemon 3DS Builder
+<h1 align="center">Pokémon 3DS Builder</h1>
 
-Turns **your own** Pokemon Platinum, SoulSilver or HeartGold cartridge dump into a game that runs natively on a **New Nintendo 3DS**.
-No game files are in this repo or in the download. Everything happens on your computer, with your file.
+<p align="center">Build Pokémon Platinum, SoulSilver, or HeartGold from your own cartridge dump for a New Nintendo 3DS.</p>
 
-## What this installs and what you need
+<p align="center"><strong><a href="https://github.com/unowncollectables/patch-builder/releases/latest/download/Pokemon3DSBuilder.exe">Download for Windows</a></strong> · <a href="#quick-start">Quick start</a> · <a href="#troubleshooting">Troubleshooting</a></p>
 
-**The builder installs everything by itself.** The first time you press the green button it sets up:
-- **WSL + Ubuntu 24.04** (a small Linux inside Windows, from Microsoft). Windows shows a permission box (click **Yes**) and asks
-  you to **restart once**. After the restart, open the builder yourself (it never starts by itself at boot, and the WSL install is only ever run once). An Ubuntu window may ask you to make a
-  user name and password once: pick anything you will remember.
-- **Build tools inside Ubuntu**: git, make, compilers, devkitPro (3DS toolchain), and the Python modules ndspy, pillow, numpy.
-  It may ask for permission once more. Nothing is installed in Windows itself except WSL.
-- **The game projects** (downloaded from GitHub, and updated on every build).
+<p align="center"><img src="docs/builder.png" width="550" alt="Pokémon 3DS Builder showing game files, build options, SD card, Build, and Update and restart"></p>
 
-**What you still need:**
-- Windows 10 (version 2004 or newer) or Windows 11, with **internet** and about **15 GB free**.
-- **Virtualization turned on** in the PC's BIOS. It is on for most PCs; if not, the builder tells you.
-- Time: the **first build takes about 1-2 hours** (mostly downloading and compiling). Later builds take minutes.
-- A **New** 3DS / New 2DS XL with custom firmware, and **your own** game dump.
+## Quick start
 
-## Build and install
+You’ll need Windows 10 version 2004 or later or Windows 11, internet access, and about 15 GB of free space. To play, you’ll need a **New Nintendo 3DS, New Nintendo 3DS XL, or New Nintendo 2DS XL** with custom firmware. Your cartridge dump stays on your computer.
 
-1. Download **Pokemon3DSBuilder.exe** from the [latest release](https://github.com/unowncollectables/patch-builder/releases/latest) and open it.
-2. Click **Choose game files** and select one or more `.nds` files. The builder recognizes and checks each game for you. Use **Remove** to leave a game out.
-3. To install to your SD card, plug it in and click **Find SD card**. If more than one card is found, use **Browse**. Leave the field empty to save to your PC.
-4. Click **Build and install to SD** or **Build and save to PC**. If Windows needs to install WSL, follow the prompts, then reopen the builder after restarting. Your selections are saved.
-5. Open the finished game in Homebrew Launcher on your New 3DS. If you made a HOME Menu installer, use FBI to install its `.cia` from the card’s `cias` folder.
+1. Open **Pokemon3DSBuilder.exe** and click **Choose game files**. Pick your US `.nds` file. Platinum requires a clean, untrimmed **Rev 1** dump. You can select more than one game.
+2. To copy the finished game to your 3DS SD card, insert the card and click **Find SD card**. If the builder finds multiple cards, use **Browse** to select the top level of the right one. Leave the SD card field empty to save the build to your PC.
+3. Click **Build and install to SD** or **Build and save to PC**. On the first run, Windows may ask to install WSL and Ubuntu. Approve the prompt, restart if asked, then reopen the builder and press Build again. If Ubuntu asks you to create a Linux username and password, finish that prompt first.
+4. Open the game in **Homebrew Launcher**. If you enabled **Make a HOME Menu installer (.cia)**, you can also open **FBI** on the console and install the game’s `.cia` from the SD card’s `cias` folder.
 
-The first build can take an hour or more. Finished files also go to **Documents → Pokemon 3DS Builds** by default. Use **Open output folder** to find the files and instructions. **Build options** shows the output location and HOME Menu installer toggle. **Troubleshooting** has setup checks, tool repair, and cache reset. The result shows a repair action when the build log points to one. **Advanced** has manual game selection, project settings, and the optional SoulSilver file for Platinum followers.
+The first build can take an hour or more. The builder downloads the game project and sets up the tools for you. Finished files also go to **Documents → Pokemon 3DS Builds** by default. Click **Open output folder** to find them and the installation instructions.
 
-The build button also checks for new game code. **Advanced → Offline** skips that check, and **Advanced → Update and build** checks even when Offline is selected. If a newer builder is available, the window links to the download.
+> [!NOTE]
+> HeartGold is experimental. It has its own output folder, HOME Menu title, and save file, so you can install it alongside SoulSilver.
 
-### Cleaning up
+## Update the builder
 
-After a good copy the builder tidies its own leftovers (half-finished downloads, old copies of its own `.3dsx`/`.cia`).
-On the SD card it keeps the current build plus one backup (`platinum3ds_full.3dsx.prev`). **Troubleshooting → Delete old builds**
-lists what it would remove and asks first. Saves, `save_backups/`, your game files, settings, the toolchain and the build
-cache are never removed, so rebuilds stay fast.
+Starting with **v1.3.17**, the Windows app shows **Update and restart** when a newer version is available. Click it when you’re finished building. The app verifies the download, replaces the executable, and reopens with your saved settings.
 
-### Where the files go on the SD card
+If you’re on **v1.3.16 or older**, or the in-app update fails, close the builder and replace your copy with the latest executable. [Download for Windows](https://github.com/unowncollectables/patch-builder/releases/latest/download/Pokemon3DSBuilder.exe)
 
-| File | Goes in |
-|---|---|
-| `platinum3ds_full.3dsx` (Homebrew Launcher) | `SD:/3ds/platinum3ds/` |
-| your game file (copied once, as `platinum.nds`) | `SD:/3ds/platinum3ds/` |
-| `platinum3ds.cia` (HOME Menu installer) | `SD:/cias/` |
-| your save `platinum.sav` | `SD:/3ds/platinum3ds/` (never overwritten; backed up to `save_backups/` first) |
-
-If you skipped the SD card, copy the files into those folders yourself.
+The **Build** button also checks for updates to the game projects. Use **Advanced → Offline** to skip that check, or **Advanced → Update and build** to check even while Offline is selected.
 
 ## Troubleshooting
 
-| You see | Do this |
-|---|---|
-| "cannot see SD card F:" (v1.0.7 and older) | Use v1.0.8 or newer: it copies to the SD card from Windows itself. |
-| "Windows protected your PC" (blue SmartScreen box) | Normal for a new download. Press **More info**, then **Run anyway**. |
-| "No module named 'ndspy'" or "built without following Pokemon" | Troubleshooting → **Repair tools**, then press the build button again. Platinum still installs without following Pokemon either way. |
-| Red cross: "another region" / "Rev 0" / "trimmed" / "has been changed" | You need an untouched US Rev 1 dump, 128 MB. Dump your cartridge again (for example with GodMode9). |
-| "WSL cannot start" / "virtualization is not enabled" / restart loop | Windows cannot run WSL2. The builder explains this and offers **Turn on** for the two Windows settings it needs (Virtual Machine Platform and the hypervisor); then restart once. Common on PCs set up for VirtualBox or VMware (update them afterwards if they complain). If it still fails, turn on Virtualization (Intel VT-x / AMD SVM) in the PC's BIOS/UEFI. Troubleshooting → **Check setup** shows a plain report of this PC. |
-| Asked to install WSL again and again | Update to v1.1.5 or newer. The builder installs WSL at most once and starts nothing at boot. Advanced > **Clean up boot entries** removes anything older versions left behind. |
-| "WSL has no Linux installed" | Open PowerShell and run `wsl --install -d Ubuntu`, restart, try again. |
-| "Check that this computer is online" | Connect to the internet and press the button again. |
-| "The disk is full" | Free about 15 GB and try again. |
-| "ran out of memory" | Check **Use less memory (slower)** under **Build options**, then press Build again. |
-| "write-protected" | Slide the SD card's lock switch up and plug it in again. |
-| The game is not in the Homebrew Launcher | Check the `.3dsx` is in `SD:/3ds/platinum3ds/`. It needs a **New** 3DS. |
-| The HOME Menu icon is flat, not the animated 3D banner (Platinum) | The 3D banner needs Python 3.12+ in WSL (Ubuntu 24.04). The log says why; press **Copy details for help**. |
-| Anything else | Press **Copy details for help** and paste it into a [GitHub issue](https://github.com/unowncollectables/patch-builder/issues). Never attach game files. |
+- **Compiler runs out of memory.** Check **Use less memory (slower)** under **Build options**, then press Build again.
+- **Build tools fail to install.** Open **Troubleshooting → Check setup** or choose **Repair tools**. The builder downloads its verified devkitPro tools automatically.
+- **Windows can’t start WSL.** Follow the builder’s one-time setup prompts. If it still reports that virtualization is off, enable Intel VT-x or AMD SVM in your PC’s BIOS or UEFI and restart.
+- **The game file is rejected.** Read the message beneath the file. Use a clean US dump of the selected game, and make sure Platinum is untrimmed Rev 1.
+- **The SD card is missing or write-protected.** Reinsert it and check the lock switch. You can clear the SD card field and save the build to your PC.
+- **The builder offers Reset build cache.** Use it if the build keeps failing at the same step. It clears temporary build files, so the next build takes longer.
+- **You still need help.** Click **Copy details for help** and paste the log into an issue. Include your builder version and the game you were building. Share the log only. [Open a GitHub issue](https://github.com/unowncollectables/patch-builder/issues)
 
-SoulSilver works the same way: pick your US SoulSilver `.nds` using **Choose game files**.
-Giving a SoulSilver file while building Platinum also adds following Pokemon to Platinum.
+<details>
+<summary><strong>Copy files to the SD card yourself</strong></summary>
 
-### HeartGold (experimental)
+Open the game’s output folder. Copy its `.3dsx` and your own cartridge dump into the corresponding folder. Use the exact dump filename shown below. If your card already has your cartridge dump there, leave it in place.
 
-Pick your US HeartGold `.nds` using **Choose game files**. HeartGold is built from the SoulSilver project
-but is a completely separate game: its own download (`~/Pokemon-HeartGold-New3ds`), its own output folder (`HeartGold\`), its
-own SD folder and save, and its own HOME Menu icon (with Ho-Oh). Building or installing it never touches SoulSilver or its save,
-and you can have both installed. A SoulSilver file in the HeartGold box (or the other way round) gets a red cross.
+| Game | SD card folder | Cartridge dump filename |
+| --- | --- | --- |
+| Platinum | `3ds/platinum3ds/` | `platinum.nds` |
+| SoulSilver | `3ds/soulsilver3ds/` | `soulsilver.nds` |
+| HeartGold | `3ds/heartgold3ds/` | `heartgold.nds` |
 
-| File | Goes in |
-|---|---|
-| `heartgold3ds.3dsx` (Homebrew Launcher) | `SD:/3ds/heartgold3ds/` |
-| your game file (copied once, as `heartgold.nds`) | `SD:/3ds/heartgold3ds/` |
-| `heartgold3ds.cia` (HOME Menu installer) | `SD:/cias/` |
-| your save `heartgold.sav` | `SD:/3ds/heartgold3ds/` (never overwritten; backed up first) |
+If you made a `.cia`, copy it to `cias/` and install it using **FBI**. If Platinum’s output contains `followers.bin`, copy it alongside the `.3dsx`.
 
-**Experimental:** HeartGold compiles and packages, but it has not been played on a console yet. Expect surprises, and
-please report them.
+The builder backs up existing saves in the game’s `save_backups/` folder before copying a build. **Troubleshooting → Delete old builds** previews the files it can remove.
 
-## Make the exe yourself (optional)
+</details>
 
-Install [Python 3](https://www.python.org/downloads/) (tick *Add python to PATH*) and double-click `build_exe.bat`.
-Or run without an exe: `python p3ds_builder.py`. Maintainers: pushing a `v*` tag builds the exe and attaches it to a release (copy `ci/release-exe.yml` into `.github/workflows/` once; a token without workflow scope could not add it there).
+<details>
+<summary><strong>Advanced options and Platinum followers</strong></summary>
 
-## Linux and the command line
+- To add following Pokémon to Platinum, select Platinum and use **Advanced → Add SoulSilver for Platinum followers** to choose a US SoulSilver dump. Building both games together also provides the SoulSilver file to Platinum.
+- Leave project folders empty for automatic downloads into your Linux or WSL home. Choose a folder manually to use an existing checkout.
+- **Advanced** includes manual game selection, Offline, Quick rebuild, Full build, and Test Platinum patches.
 
-Linux: `python3 p3ds_builder.py` (needs `python3-tk`). Without the window, per game:
+</details>
 
-```sh
-P3DS_ROOT=~/3ds-platinum P3DS_PLATINUM=~/platinum.nds P3DS_SD=/media/me/SD [P3DS_CIA=1] bash p3ds_build.sh check | all | quick
-P3DS_ROOT=~/Pokemon-Soulsilver-New3ds P3DS_SOULSILVER=~/soulsilver.nds P3DS_SD=/media/me/SD [P3DS_CIA=1] bash ss_build.sh check | all | quick
-P3DS_ROOT=~/Pokemon-HeartGold-New3ds P3DS_HEARTGOLD=~/heartgold.nds P3DS_SD=/media/me/SD [P3DS_CIA=1] bash hg_build.sh check | all | quick
-bash p3ds_get.sh platinum | soulsilver | heartgold   # download the project into ~/3ds-platinum, ~/Pokemon-Soulsilver-New3ds or ~/Pokemon-HeartGold-New3ds
-```
+<details>
+<summary><strong>Run from source or use the command line</strong></summary>
 
-`p3ds_build.sh` steps: `check needs setup link stage pspoke full patches testpatches relink followers cia deploy`.
-`ss_build.sh` steps: `check needs setup stage build link cia deploy`. Every step is safe to repeat.
-Needs root once for `setup` (apt + devkitPro); the GUI does that for you (WSL runs it as root, Linux asks via `pkexec`/`sudo`).
+On Windows, install Python 3 with **Add Python to PATH** selected. Run `python p3ds_builder.py` to launch from source, or run `build_exe.bat` to package an executable. On Linux, install `python3-tk` and run `python3 p3ds_builder.py`.
 
-The builder installs the same tools for Platinum, SoulSilver and HeartGold. On a fresh setup it downloads and verifies the 3DS tools from devkitPro’s official container image. Docker does not need to be installed. If setup fails, open the build details to see which download or install failed. For a manual devkitPro setup on Ubuntu:
+Download a game project and run its build script. Replace the example paths with your own.
 
-```sh
-wget -U "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0" https://apt.devkitpro.org/install-devkitpro-pacman
-chmod +x install-devkitpro-pacman
-sudo ./install-devkitpro-pacman
-sudo dkp-pacman -Sy 3ds-dev
-```
+~~~sh
+bash p3ds_get.sh platinum
+P3DS_ROOT=~/3ds-platinum P3DS_PLATINUM=~/platinum.nds P3DS_OUT=~/3ds-builds P3DS_CIA=1 bash p3ds_build.sh all
 
-```sh
-sudo python3 -m pip install --break-system-packages ndspy pillow numpy
-```
+bash p3ds_get.sh soulsilver
+P3DS_ROOT=~/Pokemon-Soulsilver-New3ds P3DS_SOULSILVER=~/soulsilver.nds P3DS_OUT=~/3ds-builds P3DS_CIA=1 bash ss_build.sh all
 
-## Advanced (in the window)
+bash p3ds_get.sh heartgold
+P3DS_ROOT=~/Pokemon-HeartGold-New3ds P3DS_HEARTGOLD=~/heartgold.nds P3DS_OUT=~/3ds-builds P3DS_CIA=1 bash hg_build.sh all
+~~~
 
-Project folders (leave empty and they are downloaded into your Linux/WSL home, and fast-forwarded to the latest version on each
-build if you have no local edits), offline mode, patch testing, and rebuild commands.
+Run the script’s `setup` step with administrator privileges on a fresh system. For example, run `sudo env P3DS_ROOT="$HOME/3ds-platinum" bash p3ds_build.sh setup` for Platinum. Use `check` to inspect the setup or `quick` to relink an existing build. Set `P3DS_SD` to copy directly to the card from Linux, or omit `P3DS_CIA` to skip the HOME Menu installer.
 
-## Your patches
+Maintainers can push a `v*` tag after updating the version in `p3ds_builder.py`. GitHub Actions builds the executable and attaches it to the release.
 
-The builder installs everything in your `3ds-platinum` project:
+</details>
 
-| Put the patch in | Format |
-|---|---|
-| `work_patches/overlays/<folder>__<file>.c.patch` | game source (pokeplatinum). `overlay005/fieldmap.c` is written `overlay005__fieldmap.c`; diff headers `--- a/overlay005__fieldmap.c` / `+++ b/...` |
-| `work_patches/overlays/include_<name>.patch` | headers, git-style (`a/include/...`), applied in `native-probe/pokeplatinum` |
-| `work_patches/native/<anything>.patch` | pspoke `port/` code, git-style (`a/native-audio-app/platform.c`) |
-| `pspoke-patches/NNNN-*.patch` | commits on pspoke (`git format-patch`); a change here triggers a fresh full build |
+<details>
+<summary><strong>Work with Platinum patches</strong></summary>
 
-You can keep editing them. On every build:
-- a **new** patch is applied,
-- an **edited** patch has its old version taken out and the new one put in,
-- a **deleted** patch is taken out again,
-- an unchanged patch is skipped.
+| Path in the Platinum project | Patch format |
+| --- | --- |
+| `work_patches/overlays/<folder>__<file>.c.patch` | Game source. Use flattened names such as `overlay005__fieldmap.c` in the file and diff headers. |
+| `work_patches/overlays/include_<name>.patch` | Git-style header patch against `native-probe/pokeplatinum`, with paths such as `a/include/...`. |
+| `work_patches/native/<anything>.patch` | Git-style patch to pspoke `port/` code, with paths such as `a/native-audio-app/platform.c`. |
+| `pspoke-patches/NNNN-*.patch` | A commit made with `git format-patch`. Changes trigger a full build. |
 
-Before anything changes, every patch is tried with a dry run. If one does not fit, **nothing** is changed and the
-log names the patch, so the source is never left half-patched. Windows line endings (from a Windows git checkout)
-are fixed automatically. Use **Advanced > Test my patches** to check a patch without building.
+The builder dry-runs the patches before applying them. New patches are applied, edited patches replace their prior versions, deleted patches are reversed, and unchanged patches are skipped. Use **Advanced → Test Platinum patches** to check them before building.
 
-## Windows details
+See [AGENTS.md](AGENTS.md) for repository conventions.
 
-- WSL: the builder offers to install it (or run `wsl --install -d Ubuntu` in an admin PowerShell), then restart.
-- Projects live best inside WSL (`~/3ds-platinum`, `~/Pokemon-Soulsilver-New3ds`), which builds much faster; the builder puts them there itself. It also finds clones in your Windows home, Documents, Desktop and Downloads.
-- The exe carries its own copy of the scripts, so you can move it anywhere. Run `build_exe.bat` again after the scripts change.
-
-## Status
-
-Platinum: tested here against the real pspoke (pinned commit + your pspoke-patches) and pokeplatinum `47c28d53` sources
-(new / edited / deleted / CRLF patches, all-or-nothing on conflict), ROM and SD checks, the pspoke re-prepare, and the window
-itself (Linux, virtual display) with a stand-in build script, including Cancel.
-
-SoulSilver and the two-game window (added later): the ROM checks, project finder, step plans, project download and the
-`ss_build.sh` check / needs / stage steps are tested. The new two-game window was driven headless (virtual display, stand-in build scripts) through download, needs, tool setup, both games' steps and the `.cia` option. **Not yet tested: the long SoulSilver compile through this builder, the real `.cia` steps for both games, and the Windows-only parts (WSL, drive detection, the `.exe`).** The commands it
-runs are the same ones the SoulSilver repo documents (`scripts/ss3ds_build.sh`, then `make` in `soulsilver3ds/full`).
-
-HeartGold (experimental): the ROM checks, the game list and the script's syntax are tested, and the commands `hg_build.sh`
-runs (`scripts/hg_build.sh`, then `make` and `make cia` in `heartgold3ds/full`) produced a `.3dsx` and a `.cia` in a Linux
-container. **Not yet tested: the window with the HeartGold box on a real screen, the build through this builder on
-Windows/WSL, and the game itself on a console.**
-
-## For AI helpers
-
-Read [AGENTS.md](AGENTS.md).
+</details>
