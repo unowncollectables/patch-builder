@@ -10,7 +10,7 @@ Package as an .exe with build_exe.bat (PyInstaller). Standard library only.
 """
 import hashlib, json, os, re, string, subprocess, sys, threading, queue, time, urllib.request, webbrowser
 
-VERSION = "1.3.14"   # bump before tagging a release; compared with the newest GitHub release
+VERSION = "1.3.15"   # bump before tagging a release; compared with the newest GitHub release
 RELEASES_API = "https://api.github.com/repos/unowncollectables/patch-builder/releases/latest"
 RELEASES_PAGE = "https://github.com/unowncollectables/patch-builder/releases/latest"
 
@@ -87,8 +87,6 @@ HINTS = [
     (r"\$'\\r': command not found", "A script has Windows line endings. Press the button again (they are fixed automatically)."),
     (r"has no installed distributions|There is no distribution",
      "WSL has no Linux installed yet. Open PowerShell and run:  wsl --install -d Ubuntu   then restart."),
-    (r"virtual memory exhausted|cc1.*: out of memory|Killed\s+signal|internal compiler error: Killed",
-     "The computer ran out of memory while compiling. Close other programs and press the button again."),
     (r"Permission denied.*(?:\.p3ds|sdmc|/mnt/)|Operation not permitted",
      "Windows or the SD card refused to let the builder write there. Close anything that has the folder open (File Explorer, FBI), check the SD card lock switch, and press the button again."),
     (r"git: command not found|git is not installed",
@@ -99,6 +97,10 @@ HINTS = [
      "The 3DS compiler download failed. Check that this computer is online and press the button again."),
     (r"sudo: a password is required", "Installing tools needs admin rights. On Linux run:  sudo bash p3ds_build.sh setup"),
 ]
+
+
+MEMORY_RE = re.compile(r"virtual memory exhausted|cc1.*: out of memory|Killed\s+signal|"
+                       r"internal compiler error: Killed", re.I)
 
 
 # Build errors that can be caused by cached objects or generated files.
@@ -148,6 +150,8 @@ def build_command(cfg, root, steps, legacy=False, game="platinum"):
     exports = ["export P3DS_ROOT=" + path_expr(cfg[GAMES[game]["repo"]])]
     if cfg.get("cia"):
         exports.append("export P3DS_CIA=1")
+    if cfg.get("low_memory"):
+        exports.append("export P3DS_JOBS=1 MAKEFLAGS=-j1")
     if cfg.get("sd") and not IS_WIN:      # on Windows the exe itself copies to the card (sd_copy), WSL never sees it
         exports.append("export P3DS_SD_WANTED=1")
     for key, var in (("platinum", "P3DS_PLATINUM"), ("soulsilver", "P3DS_SOULSILVER"), ("heartgold", "P3DS_HEARTGOLD"), ("sd", "P3DS_SD"), ("out", "P3DS_OUT")):
@@ -705,6 +709,8 @@ def project_report(path, game="platinum"):
 
 def explain(log_text, script_hint, failed_step):
     """One plain-English sentence for the result banner."""
+    if MEMORY_RE.search(log_text):
+        return "The compiler may have run out of memory. Check Use less memory (slower) under Build options and retry."
     if script_hint:
         return script_hint
     for pat, msg in HINTS:
@@ -727,6 +733,7 @@ def load_settings():
     out["out"] = out["out"] or DEFAULT_OUT
     out["legacy"] = bool(d.get("legacy"))
     out["cia"] = bool(d.get("cia", True))
+    out["low_memory"] = bool(d.get("low_memory"))
     out["offline"] = bool(d.get("offline"))   # beginners want both the .3dsx and the HOME Menu .cia
     out["want_plat"] = bool(d.get("want_plat", out["platinum"]))
     out["want_ss"] = bool(d.get("want_ss", False))
@@ -811,6 +818,7 @@ def run_gui():
     want_hg = tk.BooleanVar(value=cfg["want_hg"])
     wants = (("platinum", want_plat), ("soulsilver", want_ss), ("heartgold", want_hg))
     want_cia = tk.BooleanVar(value=cfg["cia"])
+    low_memory = tk.BooleanVar(value=cfg["low_memory"])
     autofind = tk.BooleanVar(value=cfg["autofind"])
     status = tk.StringVar(value="")
     q = queue.Queue()
@@ -961,7 +969,11 @@ def run_gui():
     ttk.Separator(outer).pack(fill="x", pady=4)
     ttk.Label(outer, text="2. Build options", style="Step.TLabel").pack(anchor="w", pady=(5, 2))
     field(outer, "out", "Output folder", "dir")
-    ttk.Checkbutton(outer, text="Make a HOME Menu installer (.cia)", variable=want_cia).pack(anchor="w", pady=(0, 6))
+    options = ttk.Frame(outer)
+    options.pack(fill="x", pady=(0, 6))
+    ttk.Checkbutton(options, text="Make a HOME Menu installer (.cia)", variable=want_cia).pack(side="left")
+    low_memory_btn = ttk.Checkbutton(options, text="Use less memory (slower)", variable=low_memory)
+    low_memory_btn.pack(side="left", padx=(12, 0))
 
     ttk.Separator(outer).pack(fill="x", pady=4)
     ttk.Label(outer, text="3. SD card (optional)", style="Step.TLabel").pack(anchor="w", pady=(3, 2))
@@ -1251,6 +1263,7 @@ def run_gui():
         c = {k: vars_[k].get().strip().strip('"') for k in FIELDS}
         c["want_plat"], c["want_ss"], c["want_hg"], c["cia"] = want_plat.get(), want_ss.get(), want_hg.get(), want_cia.get()
         c["offline"] = offline.get()
+        c["low_memory"] = low_memory.get()
         c["autofind"] = autofind.get()
         c["legacy"] = legacy.get()
         c["out"] = c.get("out") or DEFAULT_OUT
@@ -1261,6 +1274,7 @@ def run_gui():
         for x in maintenance_buttons:
             x.configure(state="disabled" if b else "normal")
         choose_btn.configure(state="disabled" if b else "normal")
+        low_memory_btn.configure(state="disabled" if b else "normal")
         update_build_button()
         if b:
             progress.pack(fill="x", before=toolbar, pady=(4, 0))
