@@ -160,27 +160,12 @@ step_needs() {
 
 # ------------------------------------------------------------------------------------------------ setup (root)
 step_setup() {
-  if [ "$(id -u)" -ne 0 ] && ! sudo -n true 2>/dev/null; then
-    die "setup needs root. In WSL the GUI runs it as root automatically; on Linux run: sudo $0 setup"; return 1
-  fi
-  export DEBIAN_FRONTEND=noninteractive
-  say "Installing system packages..."
-  as_root apt-get update -qq || { hint "Could not download tools. Check that this computer is online, then press the button again."; return 1; }
-  as_root apt-get install -y -qq make git patch python3 python3-pip build-essential rsync imagemagick curl wget xz-utils ca-certificates gnupg >/dev/null \
-    || { die "apt-get install failed (output above)"; hint "Installing the Linux build tools failed. Check that this computer is online, wait a few minutes (another installer may be running), then press the button again."; return 1; }
-  if [ ! -x "$DKP/devkitARM/bin/arm-none-eabi-gcc" ]; then
-    say "Installing devkitPro (official installer)..."
-    if ! command -v dkp-pacman >/dev/null; then
-      tmp=$(mktemp -d); ( cd "$tmp" && wget -q https://apt.devkitpro.org/install-devkitpro-pacman && chmod +x install-devkitpro-pacman \
-        && as_root ./install-devkitpro-pacman ) \
-        || { die "devkitPro installer failed (output above)"; hint "Could not install devkitPro (the 3DS compiler). Check that this computer is online, then press the button again."; return 1; }
-    fi
-    as_root dkp-pacman -Sy --noconfirm 3ds-dev \
-      || { die "dkp-pacman -S 3ds-dev failed (output above)"; hint "Could not download the 3DS compiler (devkitPro). Its servers may be busy; wait a few minutes and press the button again."; return 1; }
-  else ok "devkitARM already installed"; fi
-  say "Installing Python modules (ndspy, pillow, numpy)..."
-  as_root python3 -m pip install -q --break-system-packages ndspy pillow numpy 2>/dev/null || as_root python3 -m pip install -q ndspy pillow numpy \
-    || { die "pip install ndspy pillow failed (output above)"; hint "Could not install two small Python modules (ndspy, pillow, numpy). Check that this computer is online, then press the button again."; return 1; }
+  # The .exe bundles this next to all three build drivers.
+  source "$HERE/setup_build_tools.sh" || {
+    hint "The build tools setup script is missing. Download the builder again and retry."
+    return 1
+  }
+  setup_build_tools || return 1
   ensure_link || return 1
   say "Setup done."
 }
