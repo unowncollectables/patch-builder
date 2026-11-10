@@ -10,7 +10,7 @@ Package as an .exe with build_exe.bat (PyInstaller). Standard library only.
 """
 import hashlib, json, os, re, string, subprocess, sys, threading, queue, time, urllib.request, webbrowser
 
-VERSION = "1.3.13"   # bump before tagging a release; compared with the newest GitHub release
+VERSION = "1.3.14"   # bump before tagging a release; compared with the newest GitHub release
 RELEASES_API = "https://api.github.com/repos/unowncollectables/patch-builder/releases/latest"
 RELEASES_PAGE = "https://github.com/unowncollectables/patch-builder/releases/latest"
 
@@ -92,16 +92,16 @@ HINTS = [
     (r"Permission denied.*(?:\.p3ds|sdmc|/mnt/)|Operation not permitted",
      "Windows or the SD card refused to let the builder write there. Close anything that has the folder open (File Explorer, FBI), check the SD card lock switch, and press the button again."),
     (r"git: command not found|git is not installed",
-     "Git is missing. Press the green button again: the builder installs it for you (it may ask for admin rights)."),
+     "Git is missing. Press Build again: the builder installs it for you (it may ask for admin rights)."),
     (r"No module named '?ndspy",
-     "A Python helper (ndspy) is missing. Press the green button again: the builder installs it for you."),
+     "A Python helper (ndspy) is missing. Press Build again: the builder installs it for you."),
     (r"devkitPro.*(?:404|not found)|dkp-pacman.*(?:error|failed)",
      "The 3DS compiler download failed. Check that this computer is online and press the button again."),
     (r"sudo: a password is required", "Installing tools needs admin rights. On Linux run:  sudo bash p3ds_build.sh setup"),
 ]
 
 
-# Log lines that mean the saved build tree is stale (an old copy of a file was reused): the clean button lights up.
+# Build errors that can be caused by cached objects or generated files.
 STALE_RE = re.compile(r"still holds a raw|undefined reference|No rule to make target|"
                       r"file format not recognized|multiple definition", re.I)
 
@@ -500,10 +500,10 @@ def pc_report(path=""):
     if IS_WIN:
         w = wsl_state()
         out.append((w == "ok", {"ok": "WSL + Ubuntu: installed and starting.",
-                                "no-wsl": "WSL: not installed yet (the green button installs it).",
-                                "no-distro": "WSL: installed but Ubuntu is missing (the green button installs it).",
+                                "no-wsl": "WSL: not installed yet (Build installs it).",
+                                "no-distro": "WSL: installed but Ubuntu is missing (Build installs it).",
                                 "no-virt": "WSL: installed but Windows cannot start it (virtualization / Virtual Machine Platform / "
-                                           "hypervisor is off). Press the green button for the one-click fix. Windows says: "
+                                           "hypervisor is off). Press Build for the one-click fix. Windows says: "
                                            + wsl_probe_text()[:200].replace("\n", " ")}[w]))
     probs = preflight_problems(path)
     out.append((not probs, "Disk space and internet: OK." if not probs else " ".join(probs)))
@@ -691,7 +691,7 @@ def is_project(path, game):
 def project_report(path, game="platinum"):
     g = GAMES[game]
     if not path:
-        return None, "Not downloaded yet. The builder downloads it for you when you press the green button."
+        return None, "Not downloaded yet. The builder downloads it for you when you press Build."
     if path.startswith("/") and IS_WIN:
         return True, "Inside WSL (fast builds)."
     if is_project(path, game):
@@ -710,9 +710,9 @@ def explain(log_text, script_hint, failed_step):
     for pat, msg in HINTS:
         if re.search(pat, log_text):
             return msg
-    m = re.search(r"^[^\n]*\b(?:error|Error):[^\n]*$", log_text, re.M)
+    m = re.search(r"^[^\n]*\berror:[^\n]*$", log_text, re.M | re.I)
     if m:
-        return "The game did not compile. First error: " + m.group(0).strip()[:220]
+        return ("Tool setup stopped. First error: " if failed_step == "setup" else "Build stopped. First error: ") + m.group(0).strip()[:220]
     where = FRIENDLY.get(failed_step, failed_step or "the build")
     return "Something went wrong while %s. Press 'Copy details for help' and paste it into a GitHub issue (or to an AI helper)." % where.lower()
 
@@ -819,25 +819,29 @@ def run_gui():
           "plan_w": 1, "step_name": "", "done_w": 0, "cur": "", "t0": 0, "t_step": 0, "last": ""}
     activity = tk.StringVar(value="")
 
-    # Soft grey theme (easy on the eyes): grey background, light grey text.
-    BG, PANEL, FG = "#2f3237", "#3b3f45", "#e1e3e6"
-    GOOD, BAD, MUTED = "#7fd48a", "#ff8a80", "#a9aeb5"
-    GREEN, GREEN_DIM = "#2f8f4e", "#4d6b57"
-    big = ("Segoe UI", 11) if IS_WIN else ("TkDefaultFont", 11)
-    head = ("Segoe UI", 16, "bold") if IS_WIN else ("TkDefaultFont", 16, "bold")
+    BG, PANEL, FG = "#f5f5f7", "#ffffff", "#1d1d1f"
+    GOOD, BAD, MUTED = "#17663b", "#a62828", "#55555b"
+    BORDER, ACCENT = "#d4d4da", "#0066cc"
+    big = ("Segoe UI", 10) if IS_WIN else ("TkDefaultFont", 10)
+    head = (big[0], 17, "bold")
     style = ttk.Style()
     try:
-        style.theme_use("clam")      # the only built-in theme that follows custom colours everywhere
+        style.theme_use("clam")
     except tk.TclError:
         pass
     root.configure(bg=BG)
-    style.configure(".", background=BG, foreground=FG, fieldbackground=PANEL, bordercolor="#555a61",
-                    lightcolor=PANEL, darkcolor=PANEL, troughcolor=PANEL, insertcolor=FG)
-    style.configure("TButton", background=PANEL, foreground=FG, padding=(10, 5))
-    style.map("TButton", background=[("active", "#4a4f56"), ("disabled", BG)], foreground=[("disabled", "#7d838a")])
+    style.configure(".", font=big, background=BG, foreground=FG, fieldbackground=PANEL, bordercolor=BORDER,
+                    lightcolor=BORDER, darkcolor=BORDER, troughcolor="#e5e5eb", insertcolor=FG)
+    style.configure("TButton", background=PANEL, width=0, padding=(10, 4))
+    style.map("TButton", background=[("disabled", BG), ("active", "#ececf1")], foreground=[("disabled", MUTED)])
+    style.configure("Primary.TButton", background=ACCENT, foreground=PANEL, font=(big[0], 12, "bold"),
+                    bordercolor=ACCENT, lightcolor=ACCENT, darkcolor=ACCENT, padding=(12, 8))
+    style.map("Primary.TButton", background=[("disabled", "#e2e2e8"), ("active", "#0056b3")],
+              foreground=[("disabled", MUTED)])
     style.configure("TCheckbutton", background=BG, foreground=FG)
-    style.map("TCheckbutton", background=[("active", BG)], indicatorcolor=[("selected", GREEN), ("!selected", PANEL)])
-    style.configure("TEntry", fieldbackground=PANEL, foreground=FG)
+    style.map("TCheckbutton", background=[("active", BG)], indicatorcolor=[("selected", ACCENT), ("!selected", PANEL)])
+    style.configure("TEntry", fieldbackground=PANEL, foreground=FG, padding=3)
+    style.configure("TSeparator", background=BORDER)
     style.configure("Step.TLabel", font=(big[0], 11, "bold"))
 
     # Only the form and log scroll. The build action stays in view.
@@ -867,38 +871,19 @@ def run_gui():
     root.bind_all("<MouseWheel>", on_wheel)
     root.bind_all("<Button-4>", on_wheel)
     root.bind_all("<Button-5>", on_wheel)
-    # Header: colours follow the ticked game (SoulSilver = gold + silver, Platinum = steel + red).
-    THEMES = {"soulsilver": ("#c9ccd3", "#d9a93a", "Pokemon SoulSilver"), "platinum": ("#8d9bb5", "#c0463c", "Pokemon Platinum"),
-              "heartgold": ("#d9a93a", "#b5462e", "Pokemon HeartGold (experimental)"),
-              "both": ("#c9ccd3", "#8d9bb5", "Pokemon SoulSilver + Platinum"), "none": ("#8a8f96", "#8a8f96", "Pokemon 3DS Builder")}
-    hdr = tk.Frame(outer, bg=BG)
-    hdr.pack(fill="x", pady=(0, 6))
-    hdr_title = tk.Label(hdr, text="Pokemon 3DS Builder", font=head, bg=BG, fg=FG, anchor="w")
-    hdr_title.pack(fill="x")
-    hdr_sub = tk.Label(hdr, text="Play Pokemon on your 3DS", font=big, bg=BG, fg=MUTED, anchor="w")
-    hdr_sub.pack(fill="x")
-
-    def theme_key():
-        on = [g for g, v in wants if v.get()]
-        return on[0] if len(on) == 1 else "both" if on else "none"
-
-    def apply_theme():
-        k = theme_key()
-        _, b, name = THEMES[k]
-        if k == "both":
-            name = "Pokemon " + " + ".join(GAMES[g]["name"] for g, v in wants if v.get())
-        if not st["busy"]:
-            bar_color(b)
-        hdr_sub.configure(text="Selected: " + name if k != "none" else "Choose a game file to start")
+    ttk.Label(outer, text="Pokemon 3DS Builder", font=head).pack(anchor="w")
+    ttk.Label(outer, text="Choose your game files and where to put the build.",
+              foreground=MUTED).pack(anchor="w", pady=(0, 10))
 
     checks = {}
     boxes = {}
 
-    def field(parent, key, title, kind, pick_label="Browse..."):
+    def field(parent, key, title, kind, pick_label="Browse...", *, show_title=True):
         box = ttk.Frame(parent)
         box.pack(fill="x", pady=(0, 6))
         boxes[key] = box
-        ttk.Label(box, text=title).pack(anchor="w")
+        if show_title:
+            ttk.Label(box, text=title).pack(anchor="w")
         row = ttk.Frame(box)
         row.pack(fill="x")
         ent = ttk.Entry(row, textvariable=vars_[key], font=big)
@@ -914,9 +899,10 @@ def run_gui():
             if p:
                 vars_[key].set(os.path.normpath(p) if IS_WIN else p)
         ttk.Button(row, text=pick_label, command=pick).pack(side="left")
-        msg = ttk.Label(box, text="", wraplength=WRAP)
-        msg.pack(anchor="w")
-        checks[key] = msg
+        if key != "out":
+            msg = ttk.Label(box, text="", wraplength=WRAP)
+            msg.pack(anchor="w")
+            checks[key] = msg
         return row
 
     ttk.Label(outer, text="1. Game files", style="Step.TLabel").pack(anchor="w")
@@ -972,12 +958,14 @@ def run_gui():
                 if f:
                     vars_[g].set(os.path.normpath(f) if IS_WIN else f)
 
+    ttk.Separator(outer).pack(fill="x", pady=4)
     ttk.Label(outer, text="2. Build options", style="Step.TLabel").pack(anchor="w", pady=(5, 2))
     field(outer, "out", "Output folder", "dir")
     ttk.Checkbutton(outer, text="Make a HOME Menu installer (.cia)", variable=want_cia).pack(anchor="w", pady=(0, 6))
 
+    ttk.Separator(outer).pack(fill="x", pady=4)
     ttk.Label(outer, text="3. SD card (optional)", style="Step.TLabel").pack(anchor="w", pady=(3, 2))
-    sd_row = field(outer, "sd", "Copy to", "dir")
+    sd_row = field(outer, "sd", "Choose the SD card", "dir", show_title=False)
 
     def find_sd():
         cards = find_sd_cards()
@@ -991,17 +979,11 @@ def run_gui():
                                            "or use Browse.")
     ttk.Button(sd_row, text="Find SD card", command=find_sd).pack(side="left", padx=(6, 0))
     ttk.Button(sd_row, text="Clear", command=lambda: vars_["sd"].set("")).pack(side="left", padx=(6, 0))
-    clean_hint = tk.Label(outer, text="", bg=BG, fg="#ffb020", font=(big[0], 10, "bold"),
-                          wraplength=500, justify="left", anchor="w")
-    clean_hint.pack(fill="x")
-
     ttk.Separator(footer).pack(fill="x", pady=(0, 5))
-    go = tk.Button(footer, text="", font=(big[0], 13, "bold"), bg=GREEN, fg="white",
-                   activebackground="#3aa05c", activeforeground="white", relief="flat", padx=12, pady=6,
-                   cursor="hand2", command=lambda: start("auto"))
+    go = ttk.Button(footer, text="", style="Primary.TButton", command=lambda: start("auto"))
     go.pack(fill="x")
 
-    newer_lbl = tk.Label(outer, text="", fg="#7db7ff", bg=BG, cursor="hand2", font=(big[0], 10, "bold", "underline"))
+    newer_lbl = tk.Label(outer, text="", fg=ACCENT, bg=BG, cursor="hand2", font=(big[0], 10, "bold", "underline"))
 
     def check_newer():
         r = newer_release()
@@ -1009,8 +991,8 @@ def run_gui():
             q.put(("newer", r[0], r[1]))
     threading.Thread(target=check_newer, daemon=True).start()
 
-    style.configure("Game.Horizontal.TProgressbar", thickness=8, background="#8a8f96", troughcolor=PANEL, bordercolor=PANEL,
-                    lightcolor="#8a8f96", darkcolor="#8a8f96")
+    style.configure("Game.Horizontal.TProgressbar", thickness=6, background=ACCENT, troughcolor="#e5e5eb",
+                    lightcolor=ACCENT, darkcolor=ACCENT)
     pct_var = tk.StringVar(value="")
     progress = ttk.Frame(footer)
     ttk.Label(progress, textvariable=pct_var).pack(anchor="w")
@@ -1065,13 +1047,16 @@ def run_gui():
             messagebox.showinfo("Folder", "%s\n\n(%s)" % (p, e))
     ttk.Button(brow, text="Copy details for help", command=copy_details).pack(side="left")
     open_btn = ttk.Button(brow, text="Open output folder")
+    recovery_btn = ttk.Button(brow)
 
     # ---- details + advanced (folded away) ----------------------------------------------------------------
     folds = ttk.Frame(outer)
     folds.pack(fill="both", expand=True, pady=(8, 0))
     details_btn = ttk.Button(toolbar, text="Build log")
+    help_btn = ttk.Button(toolbar, text="Troubleshooting")
     adv_btn = ttk.Button(toolbar, text="Advanced")
     details_btn.pack(side="left")
+    help_btn.pack(side="left", padx=(6, 0))
     adv_btn.pack(side="left", padx=(6, 0))
 
     adv = ttk.Frame(folds, padding=(0, 8, 0, 0))
@@ -1107,25 +1092,35 @@ def run_gui():
         ttk.Button(adv, text="Clean up boot entries (stops it from starting at boot)", command=do_clean_boot).pack(anchor="w", pady=(6, 0))
     ttk.Checkbutton(adv, text="Offline: skip game updates during a normal build",
                     variable=offline).pack(anchor="w")
-    ttk.Label(adv, text="Maintenance tools. You normally never need these: the green button does everything. "
-              "Each one is explained next to its button.", foreground=MUTED, wraplength=WRAP).pack(anchor="w", pady=(10, 4))
-    abar = ttk.Frame(adv)
-    abar.pack(fill="x")
-    abar.columnconfigure(1, weight=1)
-    adv_buttons = []
-    for i, (text, pipe, why) in enumerate((
-            ("Check my setup", "check", "Only looks, changes nothing. Shows what is installed and what is missing. Use it first if something fails."),
-            ("Test my patches (Platinum)", "test", "Checks that your Platinum patches still fit the game code. Nothing is built or changed."),
-            ("Update and build", "update", "Checks GitHub for new game code even when Offline is selected."),
-            ("Quick rebuild", "quick", "Rebuilds what changed after a small local edit."),
-            ("Check and repair tools", "install", "Installs missing build tools and Python modules."),
-            ("Rebuild everything (slow)", "full", "Rebuilds the whole game from scratch. Takes a long time. Use if a normal build gives odd results."),
-            ("Delete build files (slow next time)", "cleantree", "Deletes the temporary build folder, so the next build starts from zero. Your saves, game files and SD card are kept."),
-            ("Delete old builds", "clean", "Removes old finished builds to free disk space. You are asked before anything is deleted."))):
-        b = ttk.Button(abar, text=text, command=lambda p=pipe: start(p))
-        b.grid(row=i, column=0, sticky="ew", pady=2)
-        ttk.Label(abar, text=why, foreground=MUTED, wraplength=290, justify="left").grid(row=i, column=1, sticky="w", padx=(10, 0))
-        adv_buttons.append(b)
+    help_panel = ttk.Frame(folds, padding=(0, 8, 0, 0))
+    ttk.Label(help_panel, text="Troubleshooting", style="Step.TLabel").pack(anchor="w")
+    ttk.Label(help_panel, text="If a build fails, start with Check setup.",
+              foreground=MUTED).pack(anchor="w", pady=(0, 6))
+    maintenance_buttons = []
+
+    def add_actions(parent, actions):
+        rows = ttk.Frame(parent)
+        rows.pack(fill="x", pady=(4, 0))
+        rows.columnconfigure(1, weight=1)
+        for i, (label, pipe, description) in enumerate(actions):
+            button = ttk.Button(rows, text=label, command=lambda p=pipe: start(p))
+            button.grid(row=i, column=0, sticky="ew", pady=2)
+            ttk.Label(rows, text=description, foreground=MUTED, wraplength=280, justify="left").grid(
+                row=i, column=1, sticky="w", padx=(10, 0))
+            maintenance_buttons.append(button)
+
+    add_actions(help_panel, (
+        ("Check setup", "check", "See which tools or requirements are missing."),
+        ("Repair tools", "install", "Install missing compilers and Python modules."),
+        ("Reset build cache…", "cleantree", "Clear temporary build files. The next build takes longer."),
+        ("Delete old builds…", "clean", "Review old build outputs before removing them."),
+    ))
+    add_actions(adv, (
+        ("Update and build", "update", "Check GitHub even when Offline is selected."),
+        ("Quick rebuild", "quick", "Relink after a small local edit."),
+        ("Full build…", "full", "Run the full build steps for the selected games."),
+        ("Test Platinum patches", "test", "Check whether local Platinum patches still apply."),
+    ))
 
     logf = ttk.Frame(folds)
     log = tk.Text(logf, wrap="word", height=12, bg="#1f2124", fg="#d8dadd", insertbackground="#d8dadd",
@@ -1136,24 +1131,28 @@ def run_gui():
     log.pack(side="left", fill="both", expand=True)
     log.tag_configure("bad", foreground="#ff7b72")
     log.tag_configure("good", foreground="#7ee787")
-    shown = {"details": False, "adv": False}
+    panels = {
+        "details": (logf, details_btn, "Build log", "Hide log"),
+        "help": (help_panel, help_btn, "Troubleshooting", "Hide troubleshooting"),
+        "adv": (adv, adv_btn, "Advanced", "Hide advanced"),
+    }
 
     def toggle(which, force=None):
-        on = (not shown[which]) if force is None else force
-        shown[which] = on
-        w = logf if which == "details" else adv
-        if on:
-            w.pack(fill="both" if which == "details" else "x", expand=(which == "details"))
-            root.update_idletasks()
-            scroll_canvas.yview_moveto((w.winfo_rooty() - outer.winfo_rooty()) / max(outer.winfo_height(), 1))
-        else:
-            w.pack_forget()
-            if not any(shown.values()):
-                scroll_canvas.yview_moveto(0)
-        details_btn.configure(text="Hide log" if shown["details"] else "Build log")
-        adv_btn.configure(text="Hide advanced" if shown["adv"] else "Advanced")
-    details_btn.configure(command=lambda: toggle("details"))
-    adv_btn.configure(command=lambda: toggle("adv"))
+        panel, _, _, _ = panels[which]
+        on = not panel.winfo_manager() if force is None else force
+        for key, (other, button, closed_label, open_label) in panels.items():
+            if on and key == which:
+                other.pack(fill="both" if key == "details" else "x", expand=(key == "details"))
+                button.configure(text=open_label)
+            else:
+                other.pack_forget()
+                button.configure(text=closed_label)
+        root.update_idletasks()
+        offset = (panel.winfo_rooty() - outer.winfo_rooty()) / max(outer.winfo_height(), 1) if on else 0
+        scroll_canvas.yview_moveto(offset)
+
+    for key, (_, button, _, _) in panels.items():
+        button.configure(command=lambda k=key: toggle(k))
 
     def emit(text, tag=None):
         log.configure(state="normal")
@@ -1161,8 +1160,8 @@ def run_gui():
         log.see("end")
         log.configure(state="disabled")
 
-    def show_banner(ok, text, folder=""):
-        banner.configure(text=text, bg="#27472f" if ok else "#5a2f2f", fg=GOOD if ok else BAD)
+    def show_banner(ok, text, folder="", recovery=None):
+        banner.configure(text=text, bg="#eaf5ee" if ok else "#fff0ef", fg=GOOD if ok else BAD)
         banner.pack(fill="x", pady=(3, 0), before=go)
         brow.pack(fill="x", pady=(3, 3), before=go)
         if folder:
@@ -1170,6 +1169,12 @@ def run_gui():
             open_btn.pack(side="left", padx=(6, 0))
         else:
             open_btn.pack_forget()
+        if recovery:
+            label, pipe = recovery
+            recovery_btn.configure(text=label, command=lambda: start(pipe))
+            recovery_btn.pack(side="left", padx=(6, 0))
+        else:
+            recovery_btn.pack_forget()
 
     def hide_banner():
         banner.pack_forget()
@@ -1218,10 +1223,9 @@ def run_gui():
         else:
             label = "Build and install to SD" if c["sd"] else "Build and save to PC"
             enabled = not st["busy"]
-        go.configure(text=label, state="normal" if enabled else "disabled", bg=GREEN if enabled else GREEN_DIM)
+        go.configure(text=label, state="normal" if enabled else "disabled")
 
     def refresh(*_):
-        apply_theme()
         for key, var in wants:
             # A saved SoulSilver file can also be used for Platinum's optional followers.
             if var.get() or (key == "soulsilver" and want_plat.get() and vars_[key].get().strip()):
@@ -1254,7 +1258,7 @@ def run_gui():
 
     def set_busy(b):
         st["busy"] = b
-        for x in adv_buttons:
+        for x in maintenance_buttons:
             x.configure(state="disabled" if b else "normal")
         choose_btn.configure(state="disabled" if b else "normal")
         update_build_button()
@@ -1486,7 +1490,7 @@ def run_gui():
         if st["busy"]:
             return
         c = current_cfg()
-        if pipe == "update":            # same as the big green button, but always fetches the latest from GitHub
+        if pipe == "update":            # same as Build, but always fetches the latest from GitHub
             c["offline"] = False
             pipe = "auto"
         games = selected_games(c)
@@ -1545,13 +1549,13 @@ def run_gui():
                                    "1. Restart the PC once.\n"
                                    "2. Open **Ubuntu 24.04** from the Start menu once. If it asks for a user name and password, "
                                    "type anything, then close it.\n"
-                                   "3. Press the green button again.\n\n"
-                                   "Still stuck? Advanced > Check setup shows a plain report. To run the installer yourself: "
+                                   "3. Press Build again.\n\n"
+                                   "Still stuck? Troubleshooting > Check setup shows a plain report. To run the installer yourself: "
                                    "PowerShell (admin) > wsl --install -d Ubuntu-24.04")
             return
         if w != "ok" and tries >= 1 and not restarted_since_install():
             messagebox.showinfo("Restart the computer", "The first part of the WSL setup is done, but Windows needs a restart "
-                                "before the next part.\n\nRestart the PC, open this builder, and press the green button again. "
+                                "before the next part.\n\nRestart the PC, open this builder, and press Build again. "
                                 "(The builder will not ask to install again until you have restarted.)")
             return
         if w != "ok":
@@ -1567,7 +1571,7 @@ def run_gui():
                                    "  2. Wait for the install window to finish, then restart the computer.\n"
                                    "  3. Open this builder again yourself. If a black window asks for a user name and "
                                    "password, type anything you will remember.\n"
-                                   "  4. Press the green button again. That is all. It is never asked again.\n\nInstall it now?"):
+                                   "  4. Press Build again. That is all. It is never asked again.\n\nInstall it now?"):
                 status.set("Installing WSL + Ubuntu. Windows may show a black window for a few minutes. Please wait...")
                 activity.set("Do not close this window. When the install finishes, a message here tells you to restart.")
                 st["t0"] = 0
@@ -1583,8 +1587,11 @@ def run_gui():
         if pipe == "full" and not messagebox.askokcancel("Rebuild everything", "This rebuilds the whole game from scratch and "
                                                          "takes a long time. Continue?"):
             return
-        if pipe == "cleantree" and not messagebox.askokcancel("Clean build tree", "This deletes the build tree (pspoke/.work) for the selected game(s), so the next build starts from scratch and takes a long time. Your saves, ROMs, downloaded sources and SD card are kept. Continue?"):
-            return
+        if pipe == "cleantree":
+            names = ", ".join(GAMES[g]["name"] for g in games)
+            if not messagebox.askokcancel("Reset build cache?",
+                                          "Clear temporary build files for %s? The next build will take longer." % names):
+                return
         st.update(cancel=False, hint="", failed="", installed=[], project={}, cia=c["cia"], out=c["out"],
                   head={}, remote={})
         hide_banner()
@@ -1592,7 +1599,7 @@ def run_gui():
         log.delete("1.0", "end")
         log.configure(state="disabled")
         set_target(0, True)
-        bar_color(THEMES[theme_key()][1])
+        bar_color(ACCENT)
         pct_var.set("")
         st["t0"], st["last"], st["cur"] = time.time(), "", ""
         set_busy(True)
@@ -1620,21 +1627,25 @@ def run_gui():
             status.set("Stopped.")
             bar_color("#d9534f")
             pct_var.set("Stopped at %d%%. Read the red box below, then press 'Copy details for help' to share it." % int(anim["shown"]))
-            show_banner(False, explain(text, st["hint"], st["failed"]), outd if st["failed"] == "deploy" else "")
+            failed = st["failed"]
+            msg = explain(text, st["hint"], failed)
+            recovery = None
+            if failed == "setup" and pipe != "install":
+                recovery = ("Repair tools", "install")
+            elif failed in ("build", "full", "link", "relink") and STALE_RE.search(text):
+                recovery = ("Reset build cache…", "cleantree")
+                msg += "\nIf this happens again, reset the build cache and retry."
+            show_banner(False, msg, outd if failed == "deploy" else "", recovery=recovery)
             toggle("details", True)
-            clean_hint.configure(text="If the error mentions stale build files, use Advanced → Delete build files, then build again."
-                                 if pipe != "cleantree" and STALE_RE.search(text) else "")
             return
-        clean_hint.configure(text="The build warned about old files. Use Advanced → Delete build files, then build again."
-                             if "still holds a raw" in text and pipe != "cleantree" else "")
         set_target(100)
         bar_color("#4caf6a")
         pct_var.set("Done!  100%")
         status.set("Done.")
         if pipe in ("check", "test", "install", "clean", "cleantree"):
-            msg = {"clean": "Clean up finished.", "check": "Setup checked. Anything marked MISSING is installed by the green button.",
+            msg = {"clean": "Clean up finished.", "check": "Setup checked. Anything marked MISSING is installed by Build.",
                    "test": "All your patches fit. Nothing was changed.",
-                   "cleantree": "Build tree cleaned. The next build starts from scratch.",
+                   "cleantree": "Build cache reset. Press Build to try again.",
                    "install": "Build tools installed."}[pipe]
             show_banner(True, msg)
             if pipe == "check":
@@ -1692,7 +1703,7 @@ def run_gui():
                     elif a:
                         status.set("Restart the computer now.")
                         messagebox.showinfo("One-time setup", "The installer finished. Now restart the computer.\n\n"
-                                            "Then open this builder yourself and press the green button. Nothing starts by itself at boot.")
+                                            "Then open this builder yourself and press Build. Nothing starts by itself at boot.")
                     else:
                         status.set("")
                         messagebox.showerror("One-time setup", "The installer did not finish: %s\n\nYou can do it by hand: open "
@@ -1703,7 +1714,7 @@ def run_gui():
                     if a:
                         status.set("Restart the computer, then open this builder again.")
                         messagebox.showinfo("WSL settings", "Done. Restart the computer now, then open this builder and press "
-                                            "the green button. If WSL still will not start after that, turn on Virtualization "
+                                            "Build. If WSL still will not start after that, turn on Virtualization "
                                             "(Intel VT-x / AMD SVM) in the PC's BIOS/UEFI settings.")
                     else:
                         status.set("")
