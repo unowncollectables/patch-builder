@@ -5,7 +5,7 @@ cd /d "%~dp0"
 where python >nul 2>&1 || goto :nopy
 python -m pip install --upgrade pyinstaller || goto :err
 python -m PyInstaller --noconfirm --onefile --windowed --name Pokemon3DSBuilder ^
-  --add-data "p3ds_build.sh;." --add-data "ss_build.sh;." --add-data "hg_build.sh;." --add-data "p3ds_get.sh;." --add-data "build_cia_tools.sh;." --add-data "apply_worktree.py;." p3ds_builder.py || goto :err
+  --add-data "p3ds_build.sh;." --add-data "ss_build.sh;." --add-data "hg_build.sh;." --add-data "p3ds_get.sh;." --add-data "build_cia_tools.sh;." --add-data "setup_build_tools.sh;." --add-data "apply_worktree.py;." p3ds_builder.py || goto :err
 copy /y "dist\Pokemon3DSBuilder.exe" "Pokemon3DSBuilder.exe" >nul
 echo.
 echo Done: %~dp0Pokemon3DSBuilder.exe
