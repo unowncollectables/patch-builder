@@ -122,7 +122,7 @@ bash p3ds_get.sh platinum | soulsilver     # download the project into ~/3ds-pla
 `ss_build.sh` steps: `check needs setup stage build link cia deploy`. Every step is safe to repeat.
 Needs root once for `setup` (apt + devkitPro); the GUI does that for you (WSL runs it as root, Linux asks via `pkexec`/`sudo`).
 
-If the automatic setup fails, run these two by hand in your WSL Ubuntu terminal:
+The setup is fully automatic (no prompts, browser-style download, retries). Only if it still fails, as a last resort run these two by hand in your WSL Ubuntu terminal:
 
 ```sh
 wget -U "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0" https://apt.devkitpro.org/install-devkitpro-pacman
