@@ -27,14 +27,14 @@ No game files are in this repo or in the download. Everything happens on your co
 4. Click **Build and install to SD** or **Build and save to PC**. If Windows needs to install WSL, follow the prompts, then reopen the builder after restarting. Your selections are saved.
 5. Open the finished game in Homebrew Launcher on your New 3DS. If you made a HOME Menu installer, use FBI to install its `.cia` from the card’s `cias` folder.
 
-The first build can take an hour or more. Finished files also go to **Documents → Pokemon 3DS Builds** by default. Use **Open output folder** to find the files and instructions. **Build options** shows the output location and HOME Menu installer toggle. **Advanced** has manual game selection, maintenance tools, and the optional SoulSilver file for Platinum followers.
+The first build can take an hour or more. Finished files also go to **Documents → Pokemon 3DS Builds** by default. Use **Open output folder** to find the files and instructions. **Build options** shows the output location and HOME Menu installer toggle. **Troubleshooting** has setup checks, tool repair, and cache reset. The result shows a repair action when the build log points to one. **Advanced** has manual game selection, project settings, and the optional SoulSilver file for Platinum followers.
 
 The build button also checks for new game code. **Advanced → Offline** skips that check, and **Advanced → Update and build** checks even when Offline is selected. If a newer builder is available, the window links to the download.
 
 ### Cleaning up
 
 After a good copy the builder tidies its own leftovers (half-finished downloads, old copies of its own `.3dsx`/`.cia`).
-On the SD card it keeps the current build plus one backup (`platinum3ds_full.3dsx.prev`). **Advanced > Clean up old builds**
+On the SD card it keeps the current build plus one backup (`platinum3ds_full.3dsx.prev`). **Troubleshooting → Delete old builds**
 lists what it would remove and asks first. Saves, `save_backups/`, your game files, settings, the toolchain and the build
 cache are never removed, so rebuilds stay fast.
 
@@ -55,9 +55,9 @@ If you skipped the SD card, copy the files into those folders yourself.
 |---|---|
 | "cannot see SD card F:" (v1.0.7 and older) | Use v1.0.8 or newer: it copies to the SD card from Windows itself. |
 | "Windows protected your PC" (blue SmartScreen box) | Normal for a new download. Press **More info**, then **Run anyway**. |
-| "No module named 'ndspy'" or "built without following Pokemon" | Advanced > **Check and repair tools**, then press the build button again. Platinum still installs without following Pokemon either way. |
+| "No module named 'ndspy'" or "built without following Pokemon" | Troubleshooting → **Repair tools**, then press the build button again. Platinum still installs without following Pokemon either way. |
 | Red cross: "another region" / "Rev 0" / "trimmed" / "has been changed" | You need an untouched US Rev 1 dump, 128 MB. Dump your cartridge again (for example with GodMode9). |
-| "WSL cannot start" / "virtualization is not enabled" / restart loop | Windows cannot run WSL2. The builder explains this and offers **Turn on** for the two Windows settings it needs (Virtual Machine Platform and the hypervisor); then restart once. Common on PCs set up for VirtualBox or VMware (update them afterwards if they complain). If it still fails, turn on Virtualization (Intel VT-x / AMD SVM) in the PC's BIOS/UEFI. Advanced > **Check setup** shows a plain report of this PC. |
+| "WSL cannot start" / "virtualization is not enabled" / restart loop | Windows cannot run WSL2. The builder explains this and offers **Turn on** for the two Windows settings it needs (Virtual Machine Platform and the hypervisor); then restart once. Common on PCs set up for VirtualBox or VMware (update them afterwards if they complain). If it still fails, turn on Virtualization (Intel VT-x / AMD SVM) in the PC's BIOS/UEFI. Troubleshooting → **Check setup** shows a plain report of this PC. |
 | Asked to install WSL again and again | Update to v1.1.5 or newer. The builder installs WSL at most once and starts nothing at boot. Advanced > **Clean up boot entries** removes anything older versions left behind. |
 | "WSL has no Linux installed" | Open PowerShell and run `wsl --install -d Ubuntu`, restart, try again. |
 | "Check that this computer is online" | Connect to the internet and press the button again. |
@@ -124,7 +124,7 @@ sudo python3 -m pip install --break-system-packages ndspy pillow numpy
 ## Advanced (in the window)
 
 Project folders (leave empty and they are downloaded into your Linux/WSL home, and fast-forwarded to the latest version on each
-build if you have no local edits), Check my setup, Test my patches (Platinum), Quick rebuild, Reinstall tools, Rebuild everything, Delete build files, Delete old builds.
+build if you have no local edits), offline mode, patch testing, and rebuild commands.
 
 ## Your patches
 
