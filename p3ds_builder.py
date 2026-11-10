@@ -35,6 +35,7 @@ GAMES = {   # per game: the build script, the config field holding its project f
                    "folders": ["Pokemon-HeartGold-New3ds", "pokemon-heartgold-new3ds"]},
 }
 HG_SHA1 = "4fcded0e2713dc03929845de631d0932ea2b5a37"   # HeartGold (US); heartgold_sha1 in the SoulSilver repo's upstream.lock
+HG_FILES_SHA1 = "8b84c6b2d8f980f8c6247cc6814e7557f927dced"   # heartgold_files_sha1 there: every data file and overlay of that dump
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if IS_WIN else 0
 FRIENDLY = {"check": "Checking setup", "needs": "Working out what is needed", "setup": "Installing build tools (one time)",
             "link": "Linking project folder", "stage": "Checking your game file", "pspoke": "Preparing pspoke",
@@ -206,6 +207,26 @@ SD_LAYOUT = {   # game -> (sd folder, .3dsx name, .cia name on the card, nds nam
     "soulsilver": ("soulsilver3ds", "soulsilver3ds.3dsx", "soulsilver3ds.cia", "soulsilver.nds", "soulsilver.sav"),
     "heartgold":  ("heartgold3ds", "heartgold3ds.3dsx", "heartgold3ds.cia", "heartgold.nds", "heartgold.sav"),
 }
+
+
+def _nds_files_sha1(path):
+    """One SHA1 over the SHA1 of every file in a .nds file table (game data and overlays; not the boot code).
+    Same value as scripts/hg_romcheck.py in the SoulSilver repo. None if the file is not a readable .nds."""
+    import struct
+    with open(path, "rb") as f:
+        d = f.read()
+    if len(d) < 0x200:
+        return None
+    fat, size = struct.unpack_from("<II", d, 0x48)
+    if fat + size > len(d) or size % 8:
+        return None
+    h = hashlib.sha1()
+    for i in range(size // 8):
+        a, e = struct.unpack_from("<II", d, fat + i * 8)
+        if not (0 <= a <= e <= len(d)):
+            return None
+        h.update(hashlib.sha1(d[a:e]).digest())
+    return h.hexdigest()
 
 
 def _sha1(path):
@@ -543,7 +564,7 @@ def rom_report(path, want="platinum"):
             if code.startswith("IPG") or code.startswith("IPK"):
                 return False, "That is HeartGold/SoulSilver from another region (%s). It needs US HeartGold (IPKE)." % code
             return False, "That is not Pokemon HeartGold."
-        if _sha1(path) != HG_SHA1:
+        if _sha1(path) != HG_SHA1 and _nds_files_sha1(path) != HG_FILES_SHA1:   # boot code may differ (not used); data may not
             return False, "US HeartGold, but not the exact dump the port needs, so the build would stop. Use a clean dump of your cartridge."
         return True, "Correct game: Pokemon HeartGold US."
     if want == "soulsilver":

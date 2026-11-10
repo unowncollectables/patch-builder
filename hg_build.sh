@@ -147,8 +147,7 @@ step_check() {
   [ -x "$DKP/tools/bin/3dsxtool" ] && ok 3dstools || miss "3dstools (3dsxtool)"
   [ -x "$DKP/tools/bin/picasso" ] && ok picasso || miss picasso
   if [ -n "$ROM" ] && [ -f "$ROM" ]; then
-    s=$(rom_sha1 "$ROM")
-    [ "$s" = "$WANT_SHA1" ] && ok "HeartGold ROM (SHA1 matches the tested dump)" || say "  [!]       ROM SHA1 $s is not the tested dump ($WANT_SHA1); the build may fail"
+    m=$(python3 "$ROOT/scripts/hg_romcheck.py" "$ROM" 2>&1) && ok "${m#\[HG\] ROM ok: }" || say "  [!]       ${m#error: }"
   else miss "HeartGold ROM not selected"; fi
   [ -d "$ROOT/pspoke-hg/.git" ] && ok "pspoke prepared" || say "  [--]      pspoke not downloaded yet (first build does it)"
   [ -d "$TREE" ] && ok "generated tree exists" || say "  [--]      generated tree not built yet (first build is long)"
@@ -195,9 +194,9 @@ step_stage() {
   [ -n "$ROM" ] && [ -f "$ROM" ] || { die "no HeartGold ROM selected"; hint "Pick your Pokemon HeartGold .nds file in the HeartGold box."; return 1; }
   why=$(rom_problem "$ROM")
   [ -z "$why" ] || { die "$why"; hint "$why"; return 1; }
-  s=$(rom_sha1 "$ROM")
-  if [ "$s" = "$WANT_SHA1" ]; then ok "HeartGold ROM verified (US, SHA1 matches)"
-  else say "  [!]       This HeartGold dump differs from the one the port is tested with (SHA1 $s). Continuing; if a data step fails, use a clean dump of your cartridge."; fi
+  # The project's own check: the exact reference dump, or a US HeartGold whose game data and overlays all match it.
+  if m=$(python3 "$ROOT/scripts/hg_romcheck.py" "$ROM" 2>&1); then ok "${m#\[HG\] ROM ok: }"
+  else m=${m#error: }; die "$m"; hint "This HeartGold file cannot be used: $m"; return 1; fi
 }
 
 # ------------------------------------------------------------------------------------------------ build / link / cia
