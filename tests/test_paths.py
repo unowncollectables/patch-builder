@@ -23,6 +23,26 @@ class DrivePaths(unittest.TestCase):
             b.IS_WIN = old
 
 
+class HeartGoldReady(unittest.TestCase):
+    def _rom(self, code):
+        import tempfile
+        f = os.path.join(tempfile.mkdtemp(), "x.nds")
+        with open(f, "wb") as h:
+            h.write(b"POKEMON HG".ljust(12, b"\0") + code + b"\0" * 0x200)
+        return f
+
+    def test_hg_file_recognised_and_kept_out_of_other_boxes(self):
+        hg, ss = self._rom(b"IPKE"), self._rom(b"IPGE")
+        self.assertTrue(b.rom_report(hg, "heartgold")[0])
+        self.assertFalse(b.rom_report(ss, "heartgold")[0])
+        self.assertFalse(b.rom_report(hg, "soulsilver")[0])
+        self.assertFalse(b.rom_report(hg, "platinum")[0])
+
+    def test_hg_not_buildable_yet(self):
+        self.assertNotIn("heartgold", b.GAMES)
+        self.assertEqual(b.game_out_dir("/h/x", "soulsilver"), "/h/x/soulsilver3ds/full")
+
+
 class SdCopy(unittest.TestCase):
     def test_copy_keeps_save_and_backs_it_up(self):
         import tempfile

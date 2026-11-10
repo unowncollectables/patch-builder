@@ -30,6 +30,13 @@ GAMES = {   # per game: the build script, the config field holding its project f
     "soulsilver": {"script": "ss_build.sh",   "repo": "ssrepo", "marker": "upstream.lock",  "name": "SoulSilver",
                    "folders": ["Pokemon-Soulsilver-New3ds", "pokemon-soulsilver-new3ds"]},
 }
+# Games the builder knows about but cannot build yet (not in GAMES, so no tick box, no steps, nothing runs).
+# HeartGold is the SoulSilver port's sibling: same repo, its own heartgold3ds folder and CIA. Moving it into GAMES
+# (with an hg_build.sh) is the whole switch; until then it is only recognised so a HeartGold file gets a clear answer.
+HG_SHA1 = "4fcded0e2713dc03929845de631d0932ea2b5a37"   # HeartGold (US), for the later HeartGold box
+FUTURE_GAMES = {
+    "heartgold": {"name": "HeartGold", "code": "IPKE", "sha1": HG_SHA1, "sd_folder": "heartgold3ds", "cia": "heartgold3ds.cia"},
+}
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if IS_WIN else 0
 FRIENDLY = {"check": "Checking setup", "needs": "Working out what is needed", "setup": "Installing build tools (one time)",
             "link": "Linking project folder", "stage": "Checking your game file", "pspoke": "Preparing pspoke",
@@ -175,7 +182,7 @@ def sd_mount_command(sd):
 
 def game_out_dir(repo, game):
     """Folder holding the built game. A Linux/WSL path is joined with '/', a Windows path with '\\'."""
-    sub = ["platinum3ds" if game == "platinum" else "soulsilver3ds", "full"]
+    sub = [SD_LAYOUT[game][0], "full"]
     if repo.startswith("/"):
         return "/".join([repo.rstrip("/")] + sub)
     return "\\".join([repo.rstrip("/\\")] + sub)
@@ -513,6 +520,13 @@ def rom_report(path, want="platinum"):
         size = os.path.getsize(path)
     except OSError as e:
         return False, "Cannot read that file (%s)." % e.strerror
+    if want == "heartgold":      # recognised only; the builder has no HeartGold build yet
+        fg = FUTURE_GAMES["heartgold"]
+        if code != fg["code"]:
+            return False, "That is not Pokemon HeartGold (US, game code IPKE)."
+        if _sha1(path) != fg["sha1"]:
+            return True, "US HeartGold, but not the exact dump the decomp uses. It may still work."
+        return True, "Correct game: Pokemon HeartGold US."
     if want == "soulsilver":
         if code == "IPKE":
             return False, "That is HeartGold, not SoulSilver. This port is SoulSilver (US)."
@@ -848,6 +862,8 @@ def run_gui():
     ttk.Checkbutton(grow, text="Pokemon Platinum", variable=want_plat).pack(side="left", padx=(0, 18))
     ttk.Checkbutton(grow, text="Pokemon SoulSilver", variable=want_ss).pack(side="left")
     ttk.Label(grow, text="  (both is fine)", foreground=MUTED).pack(side="left")
+    ttk.Label(outer, text="Pokemon HeartGold: coming later. It is not built yet, so there is nothing to tick.",
+              foreground=MUTED, wraplength=720).pack(anchor="w", pady=(0, 4))
     ttk.Label(outer, text="Optional: following Pokemon for Platinum (your Pokemon walks behind you, like in HeartGold/SoulSilver). "
                           "It needs your SoulSilver game file too (box 2b). You do not have to build SoulSilver for this.",
               foreground=MUTED, wraplength=720).pack(anchor="w", pady=(0, 8))
