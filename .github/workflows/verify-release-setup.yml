@@ -1,0 +1,30 @@
+name: Verify v1.3.9 clean Ubuntu setup
+on:
+  push:
+    branches: [test/v1.3.9-clean-ubuntu]
+permissions:
+  contents: read
+jobs:
+  setup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v1.3.9
+          persist-credentials: false
+      - name: Run the released builder setup on clean Ubuntu
+        shell: bash
+        run: |
+          test ! -e /opt/devkitpro
+          ! command -v dkp-pacman
+          fixture="$(mktemp -d)"
+          mkdir -p "$fixture/pspoke-patches" "$fixture/scripts" "$fixture/heartgold3ds/full"
+          touch "$fixture/upstream.lock" "$fixture/scripts/hg_build.sh" "$fixture/heartgold3ds/full/Makefile"
+          sudo -n env P3DS_ROOT="$fixture" bash hg_build.sh setup </dev/null
+          /opt/devkitpro/devkitARM/bin/arm-none-eabi-gcc -dumpversion
+          test -r /opt/devkitpro/libctru/include/3ds.h
+          test -r /opt/devkitpro/libctru/include/citro3d.h
+          test -x /opt/devkitpro/tools/bin/3dsxtool
+          test -x /opt/devkitpro/tools/bin/picasso
+          python3 -I -c 'import ndspy, PIL, numpy'
