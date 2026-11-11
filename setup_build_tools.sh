@@ -80,7 +80,7 @@ setup_build_tools() {
   say "Installing system packages..."
   as_root env DEBIAN_FRONTEND=noninteractive apt-get update -qq &&
     as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-      make git patch python3 python3-pip build-essential rsync imagemagick libpng-dev curl wget xz-utils ca-certificates gnupg >/dev/null || {
+      make git patch python3 python3-pip build-essential rsync imagemagick libpng-dev jq curl wget xz-utils ca-certificates gnupg >/dev/null || {
     die "Could not install the Linux build tools (see the apt output above)."
     hint "Check your internet connection, wait for any other package installer to finish, then retry setup."
     return 1
