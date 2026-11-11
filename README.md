@@ -20,6 +20,9 @@ The first build can take an hour or more. The builder downloads the game project
 > [!NOTE]
 > HeartGold is experimental. It has its own output folder, HOME Menu title, and save file, so you can install it alongside SoulSilver.
 
+> [!NOTE]
+> Pokémon Pinball: Ruby & Sapphire is experimental too. Pick your US `.gba` dump the same way. The builder rebuilds the game from your dump, so nothing but the `.3dsx` (and `.cia`) goes on the card.
+
 ## Update the builder
 
 Starting with **v1.3.17**, the Windows app shows **Update and restart** when a newer version is available. Click it when you’re finished building. The app verifies the download, replaces the executable, and reopens with your saved settings.
@@ -48,6 +51,7 @@ Open the game’s output folder. Copy its `.3dsx` and your own cartridge dump in
 | Platinum | `3ds/platinum3ds/` | `platinum.nds` |
 | SoulSilver | `3ds/soulsilver3ds/` | `soulsilver.nds` |
 | HeartGold | `3ds/heartgold3ds/` | `heartgold.nds` |
+| Pinball: Ruby & Sapphire | `3ds/pinball-rs/` | none needed |
 
 If you made a `.cia`, copy it to `cias/` and install it using **FBI**. If Platinum’s output contains `followers.bin`, copy it alongside the `.3dsx`.
 
@@ -80,6 +84,9 @@ P3DS_ROOT=~/Pokemon-Soulsilver-New3ds P3DS_SOULSILVER=~/soulsilver.nds P3DS_OUT=
 
 bash p3ds_get.sh heartgold
 P3DS_ROOT=~/Pokemon-HeartGold-New3ds P3DS_HEARTGOLD=~/heartgold.nds P3DS_OUT=~/3ds-builds P3DS_CIA=1 bash hg_build.sh all
+
+bash p3ds_get.sh pinball
+P3DS_ROOT=~/Pokemon-Pinball-New3ds P3DS_PINBALL=~/pinball.gba P3DS_OUT=~/3ds-builds P3DS_CIA=1 bash pinball_build.sh all
 ~~~
 
 Run the script’s `setup` step with administrator privileges on a fresh system. For example, run `sudo env P3DS_ROOT="$HOME/3ds-platinum" bash p3ds_build.sh setup` for Platinum. Use `check` to inspect the setup or `quick` to relink an existing build. Set `P3DS_SD` to copy directly to the card from Linux, or omit `P3DS_CIA` to skip the HOME Menu installer.
