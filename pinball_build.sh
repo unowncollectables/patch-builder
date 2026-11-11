@@ -83,7 +83,7 @@ rom_problem() {
 step_check() {
   say "Pinball project folder : $ROOT"
   g=$(free_gb "$ROOT"); [ -n "$g" ] && { [ "$g" -ge 2 ] && ok "free disk space ${g} GB" || miss "only ${g} GB free disk space (the build needs about 2 GB)"; }
-  for c in git make gcc g++ python3 sha1sum; do command -v $c >/dev/null && ok $c || miss $c; done
+  for c in git make gcc g++ python3 sha1sum jq; do command -v $c >/dev/null && ok $c || miss $c; done
   have_png && ok "libpng (for the decompilation's graphics tools)" || miss "libpng-dev"
   [ -x "$DKP/devkitARM/bin/arm-none-eabi-gcc" ] && ok "devkitARM" || miss "devkitARM"
   [ -f "$DKP/libctru/include/3ds.h" ] && ok libctru || miss libctru
@@ -101,6 +101,7 @@ step_needs() {
   local tools=ok
   for c in git make gcc g++ python3 sha1sum; do command -v $c >/dev/null || tools=missing; done
   have_png || tools=missing
+  command -v jq >/dev/null || tools=missing
   devkitpro_ready "$DKP" || tools=missing
   [ $tools = ok ] || echo "##NEED:setup"
   [ -f "$ROOT/build/upstream/.pokepinballrs.built" ] || echo "##NEED:full"
