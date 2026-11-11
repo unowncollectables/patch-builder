@@ -243,5 +243,62 @@ class OutDirs(unittest.TestCase):
                          "\\\\wsl.localhost\\Ubuntu\\home\\me\\3ds-platinum\\platinum3ds\\full")
 
 
+class Pinball(unittest.TestCase):
+    @staticmethod
+    def gba(code):
+        return bytes(0xAC) + code + bytes(2) + b"\x96" + bytes(0x200)
+
+    def test_gba_file_is_recognised_and_checked(self):
+        import hashlib
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as tmp:
+            rom = Path(tmp) / "dump.gba"
+            rom.write_bytes(self.gba(b"BPPE"))
+            self.assertEqual(b.identify_game_file(rom), "pinball")
+            self.assertFalse(b.rom_report(str(rom), "pinball")[0])      # right game, not the exact dump
+            old = b.PINBALL_SHA1
+            b.PINBALL_SHA1 = hashlib.sha1(rom.read_bytes()).hexdigest()
+            try:
+                self.assertTrue(b.rom_report(str(rom), "pinball")[0])
+            finally:
+                b.PINBALL_SHA1 = old
+            rom.write_bytes(self.gba(b"BPPJ"))
+            self.assertIn("another region", b.rom_report(str(rom), "pinball")[1])
+            rom.write_bytes(self.gba(b"AXVE"))
+            self.assertIsNone(b.identify_game_file(rom))
+            self.assertIn("not Pokemon Pinball", b.rom_report(str(rom), "pinball")[1])
+            nds = Path(tmp) / "x.nds"
+            nds.write_bytes(bytes(12) + b"CPUE" + bytes(0x200))
+            self.assertIn("DS game", b.rom_report(str(nds), "pinball")[1])
+            self.assertEqual(b.identify_game_file(nds), "platinum")
+
+    def test_plan_and_command(self):
+        self.assertEqual(b.selected_games({"want_pb": True}), ["pinball"])
+        self.assertEqual(b.plan_for("pinball", "auto", {"cia": True}, ["setup", "full"]),
+                         [(True, ["setup"]), (False, ["stage", "build", "cia", "deploy"])])
+        self.assertEqual(b.plan_for("pinball", "quick", {}), [(False, ["build", "deploy"])])
+        script = b.build_command({"pbrepo": "/h/p", "pinball": "/r/p.gba", "soulsilver": "/r/ss.nds"}, False, ["check"], game="pinball")[-1]
+        self.assertIn("P3DS_ROOT='/h/p'", script)
+        self.assertIn("P3DS_PINBALL='/r/p.gba'", script)
+        self.assertIn("pinball_build.sh", script)
+
+    def test_sd_copy_puts_no_rom_on_the_card(self):
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as tmp:
+            out, sd = os.path.join(tmp, "out"), os.path.join(tmp, "sd")
+            os.makedirs(os.path.join(out, "Pinball")); os.makedirs(os.path.join(sd, "3ds", "pinball-rs"))
+            open(os.path.join(out, "Pinball", "pinball-rs.3dsx"), "wb").write(b"pb")
+            open(os.path.join(out, "Pinball", "pinball-rs.cia"), "wb").write(b"cia")
+            open(os.path.join(sd, "3ds", "pinball-rs", "pinball.sav"), "wb").write(b"save")
+            rom = os.path.join(tmp, "p.gba"); open(rom, "wb").write(b"rom")
+            ok, msg, d = b.sd_copy("pinball", out, sd, rom, log=lambda *_: None)
+            self.assertTrue(ok, msg)
+            self.assertEqual(sorted(os.listdir(d)), ["pinball-rs.3dsx", "pinball.sav", "save_backups"])
+            self.assertEqual(open(os.path.join(d, "pinball.sav"), "rb").read(), b"save")
+            self.assertEqual(len(os.listdir(os.path.join(d, "save_backups"))), 1)
+            self.assertTrue(os.path.isfile(os.path.join(sd, "cias", "pinball-rs.cia")))
+
+
 if __name__ == "__main__":
     unittest.main()

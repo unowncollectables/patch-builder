@@ -3,6 +3,7 @@
 #   p3ds_get.sh platinum | soulsilver      clone into ~/3ds-platinum or ~/Pokemon-Soulsilver-New3ds (or P3DS_DEST)
 #   p3ds_get.sh heartgold                  HeartGold is built from the SoulSilver project, in a clone of its own:
 #                                          ~/Pokemon-HeartGold-New3ds. The SoulSilver folder is never used or changed.
+#   p3ds_get.sh pinball                    Pokemon Pinball: Ruby & Sapphire: ~/Pokemon-Pinball-New3ds
 #   p3ds_get.sh ensure-git                 install git (needs root)
 # Prints  ##PROJECT:<folder>  when done. An existing clone is only fast-forwarded, and only if you have no edits in it.
 set -uo pipefail
@@ -19,7 +20,9 @@ case "$what" in
   soulsilver) url=https://github.com/unowncollectables/Pokemon-Soulsilver-New3ds; def="$HOME/Pokemon-Soulsilver-New3ds"; marker=pspoke-patches ;;
   heartgold)  url=https://github.com/unowncollectables/Pokemon-Soulsilver-New3ds; def="$HOME/Pokemon-HeartGold-New3ds"; marker=heartgold3ds
               br=${P3DS_HG_BRANCH:-main} ;;      # P3DS_HG_BRANCH: build HeartGold from another branch (testing)
-  *) echo "usage: $0 platinum|soulsilver|heartgold|ensure-git" >&2; exit 2 ;;
+  pinball)    url=https://github.com/unowncollectables/Pokemon-Pinball-New3ds;    def="$HOME/Pokemon-Pinball-New3ds";    marker=game.mk
+              br=${P3DS_PINBALL_BRANCH:-main} ;;  # P3DS_PINBALL_BRANCH: build Pinball from another branch (testing)
+  *) echo "usage: $0 platinum|soulsilver|heartgold|pinball|ensure-git" >&2; exit 2 ;;
 esac
 br=${br:-main}
 command -v git >/dev/null || { echo "git is not installed"; exit 3; }
@@ -61,7 +64,7 @@ else
   [ -e "$dest" ] && [ -n "$(ls -A "$dest" 2>/dev/null)" ] && { echo "ERROR: $dest exists and is not the project"; hint "The folder $dest already exists but is not the project. Pick the right folder in Advanced, or remove it."; exit 1; }
   if ! git ls-remote -q "$url" >/dev/null 2>&1; then
     if git ls-remote -q https://github.com/git/git HEAD >/dev/null 2>&1; then
-      echo "ERROR: $url cannot be reached (the Platinum project is not public, or it moved)."
+      echo "ERROR: $url cannot be reached (the project is not public, or it moved)."
       hint "The $what project is not public yet, so it cannot be downloaded. Nothing is wrong with your computer or game file. Wait for the public release, then press the button again."
     else
       hint "Could not reach GitHub. Check that this computer is online, then press the button again."
