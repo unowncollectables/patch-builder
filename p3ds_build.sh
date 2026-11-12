@@ -287,8 +287,10 @@ step_relink() {
     rm -f "$pend"
   fi
   say "Rebuilding native objects..."
+  # The app Makefile copies audio_bank.o, so rebuild it in the directory that tracks snd_bank.c.
   ( cd "$T/native-audio-app" \
     && APP=$(sed -n 's/^APPOBJS:= *//p' "$LINK/platinum3ds/full/Makefile") \
+    && make -C ../native-audio-sound audio_bank.o \
     && make $APP && psp-objcopy --weaken-symbol=getlocalhost offline.o \
     && make -C ../native-render-opt native_gpu.o GPU2D_Soft.o \
     && make -C ../native-stack-render g3_handler.o frontend.o ) || { die "native object build failed (error above)"; hint "Part of the port did not compile. Press the button again once; if it fails the same way, press 'Copy details for help' and open a GitHub issue."; return 1; }
