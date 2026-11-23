@@ -209,7 +209,7 @@ step_check() {
 
 step_needs() {
   local tools=ok
-  for c in git make python3 sha1sum ninja; do command -v $c >/dev/null || tools=missing; done
+  for c in git make python3 sha1sum ninja clang llvm-objcopy; do command -v $c >/dev/null || tools=missing; done
   devkitpro_ready "$DKP" || tools=missing
   [ $tools = ok ] || echo "##NEED:setup"
   return 0
