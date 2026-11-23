@@ -4,6 +4,7 @@
 #   p3ds_get.sh heartgold                  HeartGold is built from the SoulSilver project, in a clone of its own:
 #                                          ~/Pokemon-HeartGold-New3ds. The SoulSilver folder is never used or changed.
 #   p3ds_get.sh pinball                    Pokemon Pinball: Ruby & Sapphire: ~/Pokemon-Pinball-New3ds
+#   p3ds_get.sh black2 | white2            Black 2 / White 2 (same private repo, one folder): ~/Pokemon-Black2-White2-New3ds
 #   p3ds_get.sh ensure-git                 install git (needs root)
 # Prints  ##PROJECT:<folder>  when done. An existing clone is only fast-forwarded, and only if you have no edits in it.
 set -uo pipefail
@@ -22,7 +23,11 @@ case "$what" in
               br=${P3DS_HG_BRANCH:-main} ;;      # P3DS_HG_BRANCH: build HeartGold from another branch (testing)
   pinball)    url=https://github.com/unowncollectables/Pokemon-Pinball-New3ds;    def="$HOME/Pokemon-Pinball-New3ds";    marker=game.mk
               br=${P3DS_PINBALL_BRANCH:-main} ;;  # P3DS_PINBALL_BRANCH: build Pinball from another branch (testing)
-  *) echo "usage: $0 platinum|soulsilver|heartgold|pinball|ensure-git" >&2; exit 2 ;;
+  black2|white2)
+              url=https://github.com/unowncollectables/Pokemon-Black2-White2-New3ds
+              def="$HOME/Pokemon-Black2-White2-New3ds"; marker=n3ds; private=1
+              br=${P3DS_B2W2_BRANCH:-main} ;;     # P3DS_B2W2_BRANCH: build from another branch (testing)
+  *) echo "usage: $0 platinum|soulsilver|heartgold|pinball|black2|white2|ensure-git" >&2; exit 2 ;;
 esac
 br=${br:-main}
 command -v git >/dev/null || { echo "git is not installed"; exit 3; }
@@ -63,16 +68,27 @@ elif [ -d "$dest/$marker" ]; then
 else
   [ -e "$dest" ] && [ -n "$(ls -A "$dest" 2>/dev/null)" ] && { echo "ERROR: $dest exists and is not the project"; hint "The folder $dest already exists but is not the project. Pick the right folder in Advanced, or remove it."; exit 1; }
   if ! git ls-remote -q "$url" >/dev/null 2>&1; then
-    if git ls-remote -q https://github.com/git/git HEAD >/dev/null 2>&1; then
-      echo "ERROR: $url cannot be reached (the project is not public, or it moved)."
-      hint "The $what project is not public yet, so it cannot be downloaded. Nothing is wrong with your computer or game file. Wait for the public release, then press the button again."
+    # A private repo (Black 2 / White 2) can still be cloned if gh is signed in.
+    if [ "${private:-}" = 1 ] && command -v gh >/dev/null && gh auth status >/dev/null 2>&1; then
+      echo "Downloading $url (private repo, using GitHub CLI) ..."
+      gh repo clone "$url" "$dest.partial" -- -b "$br" 2>&1 && mv "$dest.partial" "$dest" || { rm -rf "$dest.partial"; hint "This Black 2 / White 2 project is private, and GitHub CLI could not clone it. In WSL, run:  gh auth login   then press the button again. Or in Advanced, pick a folder you already cloned."; exit 1; }
+    elif git ls-remote -q https://github.com/git/git HEAD >/dev/null 2>&1; then
+      if [ "${private:-}" = 1 ]; then
+        echo "ERROR: $url is private, so it cannot be downloaded without a GitHub login."
+        hint "This Black 2 / White 2 project is private. In WSL, sign into GitHub with:  gh auth login   then press the button again. Or in Advanced, pick a folder you already cloned."
+      else
+        echo "ERROR: $url cannot be reached (the project is not public, or it moved)."
+        hint "The $what project is not public yet, so it cannot be downloaded. Nothing is wrong with your computer or game file. Wait for the public release, then press the button again."
+      fi
+      exit 1
     else
       hint "Could not reach GitHub. Check that this computer is online, then press the button again."
+      exit 1
     fi
-    exit 1
+  else
+    echo "Downloading $url ..."
+    git clone -q -b "$br" "$url" "$dest.partial" 2>&1 && mv "$dest.partial" "$dest" || { rm -rf "$dest.partial"; hint "Could not download the project. Check that this computer is online, then press the button again."; exit 1; }
   fi
-  echo "Downloading $url ..."
-  git clone -q -b "$br" "$url" "$dest.partial" 2>&1 && mv "$dest.partial" "$dest" || { rm -rf "$dest.partial"; hint "Could not download the project. Check that this computer is online, then press the button again."; exit 1; }
   echo "  [ok]      downloaded to $dest"
 fi
 [ -d "$dest/.git" ] && echo "##HEAD:$what:$(git -C "$dest" log -1 --format='%H %cs %s')"

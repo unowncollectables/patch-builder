@@ -135,7 +135,8 @@ class GameSelection(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             path = Path(tmp) / "backup.nds"
             for code, game in ((b"CPUE", "platinum"), (b"IPGJ", "soulsilver"),
-                               (b"IPKE", "heartgold"), (b"ABCD", None), (b"IPK", None)):
+                               (b"IPKE", "heartgold"), (b"IREE", "black2"),
+                               (b"IRDE", "white2"), (b"ABCD", None), (b"IPK", None)):
                 with self.subTest(code=code):
                     path.write_bytes(bytes(12) + code)
                     self.assertEqual(b.identify_game_file(path), game)
@@ -298,6 +299,91 @@ class Pinball(unittest.TestCase):
             self.assertEqual(open(os.path.join(d, "pinball.sav"), "rb").read(), b"save")
             self.assertEqual(len(os.listdir(os.path.join(d, "save_backups"))), 1)
             self.assertTrue(os.path.isfile(os.path.join(sd, "cias", "pinball-rs.cia")))
+
+class Black2White2(unittest.TestCase):
+    def _rom(self, code):
+        import tempfile
+        f = os.path.join(tempfile.mkdtemp(), "x.nds")
+        with open(f, "wb") as h:
+            h.write(b"POKEMON B2".ljust(12, b"\0") + code + b"\0" * 0x200)
+        return f
+
+    def test_files_recognised_and_kept_out_of_other_boxes(self):
+        b2, w2, ss = self._rom(b"IREE"), self._rom(b"IRDE"), self._rom(b"IPGE")
+        self.assertEqual(b.identify_game_file(b2), "black2")
+        self.assertEqual(b.identify_game_file(w2), "white2")
+        self.assertFalse(b.rom_report(b2, "black2")[0])      # right game, not the exact dump
+        old = b.B2_SHA1, b.W2_SHA1
+        b.B2_SHA1, b.W2_SHA1 = b._sha1(b2), b._sha1(w2)
+        try:
+            self.assertTrue(b.rom_report(b2, "black2")[0])
+            self.assertTrue(b.rom_report(w2, "white2")[0])
+        finally:
+            b.B2_SHA1, b.W2_SHA1 = old
+        self.assertFalse(b.rom_report(w2, "black2")[0])
+        self.assertIn("White 2", b.rom_report(w2, "black2")[1])
+        self.assertFalse(b.rom_report(b2, "white2")[0])
+        self.assertIn("Black 2", b.rom_report(b2, "white2")[1])
+        self.assertFalse(b.rom_report(b2, "platinum")[0])
+        self.assertIn("Black 2 or White 2", b.rom_report(b2, "platinum")[1])
+        self.assertFalse(b.rom_report(ss, "black2")[0])
+        self.assertIn("SoulSilver", b.rom_report(ss, "black2")[1])
+
+    def test_shared_repo_separate_outputs(self):
+        g2, gw = b.GAMES["black2"], b.GAMES["white2"]
+        self.assertEqual(g2["script"], "b2w2_build.sh")
+        self.assertEqual(g2["repo"], gw["repo"])
+        self.assertEqual(g2["repo"], "b2w2repo")
+        self.assertEqual(g2["folders"], gw["folders"])
+        self.assertNotEqual(b.SD_LAYOUT["black2"][0], b.SD_LAYOUT["white2"][0])
+        self.assertIsNone(b.SD_LAYOUT["black2"][3])
+        self.assertIsNone(b.SD_LAYOUT["white2"][3])
+        self.assertEqual(b.selected_games({"want_b2": True, "want_w2": True}), ["black2", "white2"])
+        self.assertEqual(b.plan_for("black2", "auto", {"cia": True}, ["setup"]),
+                         [(True, ["setup"]), (False, ["stage", "build", "cia", "deploy"])])
+        self.assertEqual(b.plan_for("white2", "quick", {}), [(False, ["build", "deploy"])])
+        script = b.build_command({"b2w2repo": "/h/bw", "black2": "/r/b2.nds", "white2": "/r/w2.nds"}, False, ["check"], game="black2")[-1]
+        self.assertIn("P3DS_ROOT='/h/bw'", script)
+        self.assertIn("P3DS_B2W2_GAME=b2", script)
+        self.assertIn("P3DS_BLACK2", script)
+        self.assertIn("b2w2_build.sh", script)
+        wscript = b.build_command({"b2w2repo": "/h/bw", "white2": "/r/w2.nds"}, False, ["check"], game="white2")[-1]
+        self.assertIn("P3DS_B2W2_GAME=w2", wscript)
+        plat = b.build_command({"repo": "/h/p", "platinum": "/r/p.nds"}, False, ["check"], game="platinum")[-1]
+        self.assertNotIn("b2w2_build.sh", plat)
+        self.assertNotIn("P3DS_B2W2_GAME", plat)
+
+    def test_sd_copy_stages_data_and_leaves_the_other_game_alone(self):
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as tmp:
+            out, sd = os.path.join(tmp, "out"), os.path.join(tmp, "sd")
+            bdir = os.path.join(out, "Black 2")
+            os.makedirs(os.path.join(bdir, "nitrofs", "a"))
+            os.makedirs(os.path.join(bdir, "overlays"))
+            os.makedirs(os.path.join(sd, "3ds", "white2_3ds"))
+            open(os.path.join(bdir, "black2_3ds.3dsx"), "wb").write(b"b2")
+            open(os.path.join(bdir, "black2_3ds.cia"), "wb").write(b"cia")
+            open(os.path.join(bdir, "nitrofs", "a", "file"), "wb").write(b"fs")
+            open(os.path.join(bdir, "overlays", "arm9_ovt.bin"), "wb").write(b"ovt")
+            open(os.path.join(bdir, "rom_header.bin"), "wb").write(b"hdr")
+            wdir = os.path.join(sd, "3ds", "white2_3ds")
+            open(os.path.join(wdir, "white2_3ds.3dsx"), "wb").write(b"W2")
+            before = {n: open(os.path.join(wdir, n), "rb").read() for n in os.listdir(wdir)}
+            rom = os.path.join(tmp, "b2.nds"); open(rom, "wb").write(b"rom")
+            ok, msg, d = b.sd_copy("black2", out, sd, rom, log=lambda *_: None)
+            self.assertTrue(ok, msg)
+            self.assertEqual(os.path.normpath(d), os.path.join(sd, "3ds", "black2_3ds"))
+            names = set(os.listdir(d))
+            self.assertIn("black2_3ds.3dsx", names)
+            self.assertIn("nitrofs", names)
+            self.assertIn("overlays", names)
+            self.assertIn("rom_header.bin", names)
+            self.assertNotIn("black2.nds", names)
+            self.assertEqual(open(os.path.join(d, "nitrofs", "a", "file"), "rb").read(), b"fs")
+            self.assertEqual(open(os.path.join(d, "overlays", "arm9_ovt.bin"), "rb").read(), b"ovt")
+            self.assertTrue(os.path.isfile(os.path.join(sd, "cias", "black2_3ds.cia")))
+            self.assertEqual({n: open(os.path.join(wdir, n), "rb").read() for n in os.listdir(wdir)}, before)
+
 
 
 if __name__ == "__main__":
