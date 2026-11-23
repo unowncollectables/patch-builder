@@ -135,8 +135,8 @@ class GameSelection(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             path = Path(tmp) / "backup.nds"
             for code, game in ((b"CPUE", "platinum"), (b"IPGJ", "soulsilver"),
-                               (b"IPKE", "heartgold"), (b"IREE", "black2"),
-                               (b"IRDE", "white2"), (b"ABCD", None), (b"IPK", None)):
+                               (b"IPKE", "heartgold"), (b"IREO", "black2"),
+                               (b"IRDO", "white2"), (b"ABCD", None), (b"IPK", None)):
                 with self.subTest(code=code):
                     path.write_bytes(bytes(12) + code)
                     self.assertEqual(b.identify_game_file(path), game)
@@ -309,7 +309,7 @@ class Black2White2(unittest.TestCase):
         return f
 
     def test_files_recognised_and_kept_out_of_other_boxes(self):
-        b2, w2, ss = self._rom(b"IREE"), self._rom(b"IRDE"), self._rom(b"IPGE")
+        b2, w2, ss = self._rom(b"IREO"), self._rom(b"IRDO"), self._rom(b"IPGE")
         self.assertEqual(b.identify_game_file(b2), "black2")
         self.assertEqual(b.identify_game_file(w2), "white2")
         self.assertFalse(b.rom_report(b2, "black2")[0])      # right game, not the exact dump
