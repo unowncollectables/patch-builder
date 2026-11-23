@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Pokemon 3DS Builder - a one-button window around p3ds_build.sh (Platinum) and ss_build.sh (SoulSilver).
+"""Pokemon 3DS Builder - a one-button window around the per-game build scripts (Platinum, SoulSilver, HeartGold, Pinball, Black 2, White 2).
 
-Tick Platinum and/or SoulSilver, pick the game file(s) you own and your SD card, press "Build my game and put it on the SD card". The window
-downloads the project(s) if needed, works out which steps are still needed (tools, pspoke, full build), builds the
+Tick the game(s) you want, pick the game file(s) you own and your SD card, press "Build and install". The window
+downloads the project(s) if needed, works out which steps are still needed, builds the
 game(s) and copies them to the card (optionally also a HOME Menu .cia). Everything else lives under "Advanced".
 
 On Windows it runs the build inside WSL2 (wsl.exe); on Linux it runs bash directly.
@@ -19,7 +19,7 @@ HERE = os.path.dirname(os.path.abspath(sys.argv[0] if getattr(sys, "frozen", Fal
 # The .exe carries its own copy of the build scripts (build_exe.bat bundles them), so it works from any folder.
 SCRIPTS = getattr(sys, "_MEIPASS", HERE)
 SETTINGS = os.path.join(os.path.expanduser("~"), ".p3ds_builder.json")
-FIELDS = ["repo", "ssrepo", "hgrepo", "pbrepo", "platinum", "soulsilver", "heartgold", "pinball", "out", "sd"]
+FIELDS = ["repo", "ssrepo", "hgrepo", "pbrepo", "b2w2repo", "platinum", "soulsilver", "heartgold", "pinball", "black2", "white2", "out", "sd"]
 DEFAULT_OUT = os.path.join(os.path.expanduser("~"), "Documents", "Pokemon 3DS Builds")
 LAST_LOG = os.path.join(DEFAULT_OUT, "p3ds_builder_last_log.txt")   # easy to find in Documents (was your user folder)
 PLAT_SHA1 = "0862ec35b24de5c7e2dcb88c9eea0873110d755c"
@@ -37,8 +37,15 @@ GAMES = {   # per game: the build script, the config field holding its project f
     # checks that against the user's ROM, and compiles the whole game into the .3dsx: no ROM goes on the SD card.
     "pinball":    {"script": "pinball_build.sh", "repo": "pbrepo", "marker": "game.mk",     "name": "Pinball",
                    "folders": ["Pokemon-Pinball-New3ds", "pokemon-pinball-new3ds"]},
+    # Black 2 and White 2 are two outputs of the same New 3DS port (one clone, two ROMs, two SD folders).
+    "black2":     {"script": "b2w2_build.sh", "repo": "b2w2repo", "marker": "n3ds",         "name": "Black 2",
+                   "folders": ["Pokemon-Black2-White2-New3ds", "pokemon-black2-white2-new3ds"]},
+    "white2":     {"script": "b2w2_build.sh", "repo": "b2w2repo", "marker": "n3ds",         "name": "White 2",
+                   "folders": ["Pokemon-Black2-White2-New3ds", "pokemon-black2-white2-new3ds"]},
 }
 PINBALL_SHA1 = "9fec81ce2c5df589e0371a0bf2f92a5fe8db730b"   # Pokemon Pinball: Ruby & Sapphire (US); rom_sha1 in its upstream.lock
+B2_SHA1 = "e51e6dfb8678a3d19dcd2a10691b96a569ca0abb"   # Black 2 US; black2_us_sha1 in the B2W2 repo's upstream.lock
+W2_SHA1 = "b5d7490be7b415b8f1e672a53e978a9cc667e56a"   # White 2 US; white2_us_sha1 there
 ROM_EXT = {"pinball": ".gba"}   # every other game is a DS game (.nds)
 GAME_FILETYPES = [("Game files", "*.nds *.gba"), ("DS game files", "*.nds"), ("GBA game files", "*.gba")]
 HG_SHA1 = "4fcded0e2713dc03929845de631d0932ea2b5a37"   # HeartGold (US); heartgold_sha1 in the SoulSilver repo's upstream.lock
@@ -92,6 +99,8 @@ WRAP = 480      # text width (pixels) of the window's labels
 HINTS = [
     (r"0x80370102|Virtual Machine Platform|virtualization|HCS_E_HYPERV_NOT_INSTALLED",
      "Windows cannot start Linux because virtualization is off. Turn on 'Virtualization' (Intel VT-x / AMD SVM) in your PC's BIOS/UEFI settings, then press the button again."),
+    (r"Black 2 / White 2 project is private|Pokemon-Black2-White2-New3ds",
+     "This Black 2 / White 2 project is private. In WSL, sign into GitHub with:  gh auth login   then press the button again. Or in Advanced, pick a folder you already cloned."),
     (r"Platinum project is not public|could not read Username|Repository not found|Authentication failed",
      "The Platinum project is not public yet, so the builder cannot download it. Nothing is wrong with your computer or game file. Wait for the public release, then press the button again."),
     (r"No space left on device", "The disk is full. Free up about 10 GB and press the button again."),
@@ -168,7 +177,11 @@ def build_command(cfg, root, steps, legacy=False, game="platinum"):
         exports.append("export P3DS_JOBS=1 MAKEFLAGS=-j1")
     if cfg.get("sd") and not IS_WIN:      # on Windows the exe itself copies to the card (sd_copy), WSL never sees it
         exports.append("export P3DS_SD_WANTED=1")
-    for key, var in (("platinum", "P3DS_PLATINUM"), ("soulsilver", "P3DS_SOULSILVER"), ("heartgold", "P3DS_HEARTGOLD"), ("pinball", "P3DS_PINBALL"), ("sd", "P3DS_SD"), ("out", "P3DS_OUT")):
+    if game == "black2":
+        exports.append("export P3DS_B2W2_GAME=b2")
+    elif game == "white2":
+        exports.append("export P3DS_B2W2_GAME=w2")
+    for key, var in (("platinum", "P3DS_PLATINUM"), ("soulsilver", "P3DS_SOULSILVER"), ("heartgold", "P3DS_HEARTGOLD"), ("pinball", "P3DS_PINBALL"), ("black2", "P3DS_BLACK2"), ("white2", "P3DS_WHITE2"), ("sd", "P3DS_SD"), ("out", "P3DS_OUT")):
         if key == "sd" and IS_WIN:
             continue
         if cfg.get(key):
@@ -210,6 +223,8 @@ SD_LAYOUT = {   # game -> (sd folder, .3dsx name, .cia name on the card, nds nam
     "soulsilver": ("soulsilver3ds", "soulsilver3ds.3dsx", "soulsilver3ds.cia", "soulsilver.nds", "soulsilver.sav"),
     "heartgold":  ("heartgold3ds", "heartgold3ds.3dsx", "heartgold3ds.cia", "heartgold.nds", "heartgold.sav"),
     "pinball":    ("pinball-rs", "pinball-rs.3dsx", "pinball-rs.cia", None, "pinball.sav"),   # None: no ROM on the card
+    "black2":     ("black2_3ds", "black2_3ds.3dsx", "black2_3ds.cia", None, "black2.sav"),    # data is nitrofs/overlays, not a raw .nds
+    "white2":     ("white2_3ds", "white2_3ds.3dsx", "white2_3ds.cia", None, "white2.sav"),
 }
 
 
@@ -288,6 +303,16 @@ def sd_copy(game, out_dir, sd, rom, log=print, *, include_cia=True):
         fb = os.path.join(src, "followers.bin")
         if game == "platinum" and os.path.isfile(fb):
             _copy_to_card(fb, os.path.join(d, "followers.bin"))
+        if game in ("black2", "white2"):
+            import shutil
+            for name in ("nitrofs", "overlays"):
+                s = os.path.join(src, name)
+                if os.path.isdir(s):
+                    shutil.copytree(s, os.path.join(d, name), dirs_exist_ok=True)
+                    log("  [ok]      %s copied to %s\n" % (name, d))
+            hdr = os.path.join(src, "rom_header.bin")
+            if os.path.isfile(hdr):
+                _copy_to_card(hdr, os.path.join(d, "rom_header.bin"))
         if include_cia and os.path.isfile(os.path.join(src, cia)):
             os.makedirs(os.path.join(sd, "cias"), exist_ok=True)
             _copy_to_card(os.path.join(src, cia), os.path.join(sd, "cias", cia))
@@ -672,7 +697,7 @@ def identify_game_file(path):
         return "pinball"
     code = head[12:16]
     if len(code) == 4:
-        return {b"CPU": "platinum", b"IPG": "soulsilver", b"IPK": "heartgold"}.get(code[:3])
+        return {b"CPU": "platinum", b"IPG": "soulsilver", b"IPK": "heartgold", b"IRE": "black2", b"IRD": "white2"}.get(code[:3])
     return None
 
 
@@ -706,6 +731,8 @@ def rom_report(path, want="platinum", *, for_followers=False):
     if want == "heartgold":
         if code == "IPGE":
             return False, "That is SoulSilver, not HeartGold. Put it in the SoulSilver box."
+        if code.startswith("IRE") or code.startswith("IRD"):
+            return False, "That is Pokemon Black 2 or White 2, not HeartGold. Put it in the Black 2 or White 2 box."
         if code.startswith("CPU"):
             return False, "That is Pokemon Platinum, not HeartGold. Put it in the Platinum box."
         if code != "IPKE":
@@ -718,6 +745,8 @@ def rom_report(path, want="platinum", *, for_followers=False):
     if want == "soulsilver":
         if code == "IPKE":
             return False, "That is HeartGold, not SoulSilver. Put it in the HeartGold box."
+        if code.startswith("IRE") or code.startswith("IRD"):
+            return False, "That is Pokemon Black 2 or White 2, not SoulSilver. Put it in the Black 2 or White 2 box."
         if code.startswith("CPU"):
             return False, "That is Pokemon Platinum, not SoulSilver. Put it in the Platinum box."
         if code != "IPGE":
@@ -732,12 +761,33 @@ def rom_report(path, want="platinum", *, for_followers=False):
         except OSError as e:
             return False, "Cannot read that file (%s)." % e.strerror
         return True, "Correct game: Pokemon SoulSilver US."
+    if want in ("black2", "white2"):
+        other = "white2" if want == "black2" else "black2"
+        other_name = "White 2" if want == "black2" else "Black 2"
+        need, need_code, sha = (("Black 2", "IREE", B2_SHA1) if want == "black2" else ("White 2", "IRDE", W2_SHA1))
+        if code == ("IRDE" if want == "black2" else "IREE"):
+            return False, "That is %s, not %s. Put it in the %s box." % (other_name, need, other_name)
+        if code.startswith("CPU"):
+            return False, "That is Pokemon Platinum, not %s. Put it in the Platinum box." % need
+        if code.startswith("IPG") or code.startswith("IPK"):
+            return False, "That is HeartGold/SoulSilver, not %s. Put it in the SoulSilver or HeartGold box." % need
+        if want == "black2" and code.startswith("IRE") and code != "IREE":
+            return False, "That is Pokemon Black 2 from another region (%s). It needs the US version (IREE)." % code
+        if want == "white2" and code.startswith("IRD") and code != "IRDE":
+            return False, "That is Pokemon White 2 from another region (%s). It needs the US version (IRDE)." % code
+        if code != need_code:
+            return False, "That is not Pokemon %s (game code %s)." % (need, code)
+        if _sha1(path) != sha:
+            return False, "This %s file does not match the clean US dump the build needs. Dump your cartridge again." % need
+        return True, "Correct game: Pokemon %s US." % need
     if not re.match(r"^[A-Z0-9]{4}$", code):
         return False, "That file is not a DS game (.nds)."
     if code.startswith("CPU") and code != "CPUE":
         return False, "That is Platinum from another region (%s). You need the US version." % code
     if code in ("IPGE", "IPKE"):
         return False, "That is HeartGold/SoulSilver, not Platinum. Put it in the SoulSilver or HeartGold box."
+    if code.startswith("IRE") or code.startswith("IRD"):
+        return False, "That is Pokemon Black 2 or White 2, not Platinum. Put it in the Black 2 or White 2 box."
     if code != "CPUE":
         return False, "That is not Pokemon Platinum (game code %s)." % code
     if rev == 0:
@@ -821,6 +871,9 @@ def find_project(game="platinum"):
 
 def is_project(path, game):
     g = GAMES[game]
+    if game in ("black2", "white2"):
+        return (os.path.isfile(os.path.join(path, "upstream.lock")) and os.path.isfile(os.path.join(path, "n3ds", "Makefile"))
+                and os.path.isfile(os.path.join(path, "scripts", "n3ds_build.sh")))
     if game == "pinball":
         return os.path.isfile(os.path.join(path, g["marker"])) and os.path.isfile(os.path.join(path, "scripts", "build.sh"))
     if not os.path.exists(os.path.join(path, g["marker"])) or not os.path.isdir(os.path.join(path, "pspoke-patches")):
@@ -875,6 +928,8 @@ def load_settings():
     out["want_ss"] = bool(d.get("want_ss", False))
     out["want_hg"] = bool(d.get("want_hg", False))
     out["want_pb"] = bool(d.get("want_pb", False))
+    out["want_b2"] = bool(d.get("want_b2", False))
+    out["want_w2"] = bool(d.get("want_w2", False))
     out["autofind"] = bool(d.get("autofind", False))
     return out
 
@@ -888,7 +943,8 @@ def save_settings(d):
 
 
 def selected_games(c):
-    return [g for g, k in (("platinum", "want_plat"), ("soulsilver", "want_ss"), ("heartgold", "want_hg"), ("pinball", "want_pb")) if c.get(k)]
+    return [g for g, k in (("platinum", "want_plat"), ("soulsilver", "want_ss"), ("heartgold", "want_hg"),
+                           ("pinball", "want_pb"), ("black2", "want_b2"), ("white2", "want_w2")) if c.get(k)]
 
 
 def chosen_roms(c):
@@ -915,14 +971,14 @@ def plan_for(game, pipe, c, needs=None):
             rest += ["patches", "relink"] + (["followers"] if c.get("soulsilver") else []) + cia + ["deploy"]
             return plan + [(False, rest)]
         plan = [(True, ["setup"])] if "setup" in needs else []
-        if game == "pinball":
+        if game in ("pinball", "black2", "white2"):
             return plan + [(False, ["stage", "build"] + cia + ["deploy"])]
         return plan + [(False, ["stage", "build", "link"] + cia + ["deploy"])]
     if game == "platinum":
         if pipe == "quick":
             return [(False, ["patches", "relink"] + cia + ["deploy"])]
         return PIPELINES[pipe]
-    if game == "pinball":
+    if game in ("pinball", "black2", "white2"):
         if pipe == "quick":
             return [(False, ["build"] + cia + ["deploy"])]
         return PINBALL_PIPELINES.get(pipe, [])
@@ -960,7 +1016,10 @@ def run_gui():
     want_ss = tk.BooleanVar(value=cfg["want_ss"])
     want_hg = tk.BooleanVar(value=cfg["want_hg"])
     want_pb = tk.BooleanVar(value=cfg["want_pb"])
-    wants = (("platinum", want_plat), ("soulsilver", want_ss), ("heartgold", want_hg), ("pinball", want_pb))
+    want_b2 = tk.BooleanVar(value=cfg["want_b2"])
+    want_w2 = tk.BooleanVar(value=cfg["want_w2"])
+    wants = (("platinum", want_plat), ("soulsilver", want_ss), ("heartgold", want_hg),
+             ("pinball", want_pb), ("black2", want_b2), ("white2", want_w2))
     want_cia = tk.BooleanVar(value=cfg["cia"])
     low_memory = tk.BooleanVar(value=cfg["low_memory"])
     autofind = tk.BooleanVar(value=cfg["autofind"])
@@ -1117,7 +1176,9 @@ def run_gui():
     for key, title in (("platinum", "Platinum game file (.nds, US Rev 1)"),
                        ("soulsilver", "SoulSilver game file (.nds, US)"),
                        ("heartgold", "HeartGold game file (.nds, US, experimental)"),
-                       ("pinball", "Pinball: Ruby & Sapphire game file (.gba, US, experimental)")):
+                       ("pinball", "Pinball: Ruby & Sapphire game file (.gba, US, experimental)"),
+                       ("black2", "Black 2 game file (.nds, US, early port)"),
+                       ("white2", "White 2 game file (.nds, US, early port)")):
         row = field(games_area, key, title, "file", "Replace…")
         ttk.Button(row, text="Remove", command=lambda g=key: remove_game(g)).pack(side="left", padx=(6, 0))
 
@@ -1258,6 +1319,7 @@ def run_gui():
     field(adv, "ssrepo", "SoulSilver project folder (Pokemon-Soulsilver-New3ds)", "dir")
     field(adv, "hgrepo", "HeartGold project folder (Pokemon-HeartGold-New3ds, its own copy of the SoulSilver project)", "dir")
     field(adv, "pbrepo", "Pinball project folder (Pokemon-Pinball-New3ds)", "dir")
+    field(adv, "b2w2repo", "Black 2 / White 2 project folder (Pokemon-Black2-White2-New3ds, one folder for both games)", "dir")
     ttk.Checkbutton(adv, text="Also apply the older Platinum patches/*.patch", variable=legacy).pack(anchor="w")
 
     def do_clean_boot():
@@ -1416,12 +1478,15 @@ def run_gui():
         set_check("ssrepo", *project_report(vars_["ssrepo"].get().strip().strip('"'), "soulsilver"))
         set_check("hgrepo", *project_report(vars_["hgrepo"].get().strip().strip('"'), "heartgold"))
         set_check("pbrepo", *project_report(vars_["pbrepo"].get().strip().strip('"'), "pinball"))
+        set_check("b2w2repo", *project_report(vars_["b2w2repo"].get().strip().strip('"'), "black2"))
     for k in FIELDS:
         vars_[k].trace_add("write", refresh)
     want_plat.trace_add("write", refresh)
     want_ss.trace_add("write", refresh)
     want_hg.trace_add("write", refresh)
     want_pb.trace_add("write", refresh)
+    want_b2.trace_add("write", refresh)
+    want_w2.trace_add("write", refresh)
     want_cia.trace_add("write", refresh)
 
     # ---- running -------------------------------------------------------------------------------------
@@ -1429,6 +1494,7 @@ def run_gui():
         c = {k: vars_[k].get().strip().strip('"') for k in FIELDS}
         c["want_plat"], c["want_ss"], c["want_hg"], c["cia"] = want_plat.get(), want_ss.get(), want_hg.get(), want_cia.get()
         c["want_pb"] = want_pb.get()
+        c["want_b2"], c["want_w2"] = want_b2.get(), want_w2.get()
         c["offline"] = offline.get()
         c["low_memory"] = low_memory.get()
         c["autofind"] = autofind.get()

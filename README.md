@@ -1,6 +1,6 @@
 <h1 align="center">Pokémon 3DS Builder</h1>
 
-<p align="center">Build Pokémon Platinum, SoulSilver, or HeartGold from your own cartridge dump for a New Nintendo 3DS.</p>
+<p align="center">Build Pokémon Platinum, SoulSilver, HeartGold, Pinball, Black 2, or White 2 from your own cartridge dump for a New Nintendo 3DS.</p>
 
 <p align="center"><strong><a href="https://github.com/unowncollectables/patch-builder/releases/latest/download/Pokemon3DSBuilder.exe">Download for Windows</a></strong> · <a href="#quick-start">Quick start</a> · <a href="#troubleshooting">Troubleshooting</a></p>
 
@@ -22,6 +22,9 @@ The first build can take an hour or more. The builder downloads the game project
 
 > [!NOTE]
 > Pokémon Pinball: Ruby & Sapphire is experimental too. Pick your US `.gba` dump the same way. The builder rebuilds the game from your dump, so nothing but the `.3dsx` (and `.cia`) goes on the card.
+
+> [!NOTE]
+> Black 2 and White 2 are an early New 3DS port (title screen only; PRESS START text and 3D Kyurem are still unfinished). Tick **Black 2** and/or **White 2**, then pick your own clean US `.nds` dump. Both games share one project folder. The builder extracts `nitrofs` and `overlays` onto the card; it does not copy your `.nds` or write a save. The project repo is private: sign into GitHub in WSL with `gh auth login`, or pick an existing clone under **Advanced**.
 
 ## Update the builder
 
@@ -52,8 +55,10 @@ Open the game’s output folder. Copy its `.3dsx` and your own cartridge dump in
 | SoulSilver | `3ds/soulsilver3ds/` | `soulsilver.nds` |
 | HeartGold | `3ds/heartgold3ds/` | `heartgold.nds` |
 | Pinball: Ruby & Sapphire | `3ds/pinball-rs/` | none needed |
+| Black 2 | `3ds/black2_3ds/` | `nitrofs/` and `overlays/` (no `.nds`) |
+| White 2 | `3ds/white2_3ds/` | `nitrofs/` and `overlays/` (no `.nds`) |
 
-If you made a `.cia`, copy it to `cias/` and install it using **FBI**. If Platinum’s output contains `followers.bin`, copy it alongside the `.3dsx`.
+If you made a `.cia`, copy it to `cias/` and install it using **FBI**. If Platinum’s output contains `followers.bin`, copy it alongside the `.3dsx`. For Black 2 / White 2, also copy the `nitrofs` and `overlays` folders from the output folder.
 
 The builder backs up existing saves in the game’s `save_backups/` folder before copying a build. **Troubleshooting → Delete old builds** previews the files it can remove.
 
@@ -87,6 +92,11 @@ P3DS_ROOT=~/Pokemon-HeartGold-New3ds P3DS_HEARTGOLD=~/heartgold.nds P3DS_OUT=~/3
 
 bash p3ds_get.sh pinball
 P3DS_ROOT=~/Pokemon-Pinball-New3ds P3DS_PINBALL=~/pinball.gba P3DS_OUT=~/3ds-builds P3DS_CIA=1 bash pinball_build.sh all
+
+bash p3ds_get.sh black2
+P3DS_ROOT=~/Pokemon-Black2-White2-New3ds P3DS_B2W2_GAME=b2 P3DS_BLACK2=~/black2.nds P3DS_OUT=~/3ds-builds P3DS_CIA=1 bash b2w2_build.sh all
+
+P3DS_ROOT=~/Pokemon-Black2-White2-New3ds P3DS_B2W2_GAME=w2 P3DS_WHITE2=~/white2.nds P3DS_OUT=~/3ds-builds P3DS_CIA=1 bash b2w2_build.sh all
 ~~~
 
 Run the script’s `setup` step with administrator privileges on a fresh system. For example, run `sudo env P3DS_ROOT="$HOME/3ds-platinum" bash p3ds_build.sh setup` for Platinum. Use `check` to inspect the setup or `quick` to relink an existing build. Set `P3DS_SD` to copy directly to the card from Linux, or omit `P3DS_CIA` to skip the HOME Menu installer.
