@@ -30,8 +30,8 @@ if [ -z "$ROOT" ] || [ ! -f "$ROOT/upstream.lock" ] || [ ! -f "$ROOT/n3ds/Makefi
 fi
 
 case "${P3DS_B2W2_GAME:-}" in
-  b2|black2)  SLOT=b2; TITLE="Black 2"; CODE=IREE; ROM="${P3DS_BLACK2:-}"; TARGET=black2_3ds; MAKE_T=b2; LOCK_KEY=black2_us_sha1; BASEROM=baserom_b2_us.nds; RSF=black2.rsf; FOLDER=black2_3ds; SAV=black2.sav; OUT_NAME="Black 2"; TITLE_ID=000400000F7D4200 ;;
-  w2|white2)  SLOT=w2; TITLE="White 2"; CODE=IRDE; ROM="${P3DS_WHITE2:-}"; TARGET=white2_3ds; MAKE_T=w2; LOCK_KEY=white2_us_sha1; BASEROM=baserom_w2_us.nds; RSF=white2.rsf; FOLDER=white2_3ds; SAV=white2.sav; OUT_NAME="White 2"; TITLE_ID=000400000F7D4300 ;;
+  b2|black2)  SLOT=b2; TITLE="Black 2"; CODE=IREO; ROM="${P3DS_BLACK2:-}"; TARGET=black2_3ds; MAKE_T=b2; LOCK_KEY=black2_us_sha1; BASEROM=baserom_b2_us.nds; RSF=black2.rsf; FOLDER=black2_3ds; SAV=black2.sav; OUT_NAME="Black 2"; TITLE_ID=000400000F7D4200 ;;
+  w2|white2)  SLOT=w2; TITLE="White 2"; CODE=IRDO; ROM="${P3DS_WHITE2:-}"; TARGET=white2_3ds; MAKE_T=w2; LOCK_KEY=white2_us_sha1; BASEROM=baserom_w2_us.nds; RSF=white2.rsf; FOLDER=white2_3ds; SAV=white2.sav; OUT_NAME="White 2"; TITLE_ID=000400000F7D4300 ;;
   *) echo "ERROR: set P3DS_B2W2_GAME=b2 or w2." >&2
      echo "##HINT:This build script needs to know whether to build Black 2 or White 2. In the builder, tick one of those games and pick its .nds file."; exit 2 ;;
 esac
@@ -105,9 +105,9 @@ rom_problem() {
   case "$SLOT" in
     b2)
       case "$code" in
-        IREE) echo "" ;;
-        IRDE) echo "That is White 2, not Black 2. Put it in the White 2 box." ;;
-        IRE*) echo "That is Pokemon Black 2 from another region (code $code). You need US Black 2 (IREE)." ;;
+        IREO) echo "" ;;
+        IRDO) echo "That is White 2, not Black 2. Put it in the White 2 box." ;;
+        IRE*) echo "That is Pokemon Black 2 from another region (code $code). You need US Black 2 (IREO)." ;;
         IRD*) echo "That is Pokemon White 2 from another region (code $code). Put a US White 2 file in the White 2 box, or a US Black 2 file here." ;;
         IRBO|IRBJ|IRBP|IRBK) echo "That is Pokemon Black, not Black 2." ;;
         IRAO|IRAJ|IRAP|IRAK) echo "That is Pokemon White, not Black 2." ;;
@@ -118,9 +118,9 @@ rom_problem() {
       esac ;;
     w2)
       case "$code" in
-        IRDE) echo "" ;;
-        IREE) echo "That is Black 2, not White 2. Put it in the Black 2 box." ;;
-        IRD*) echo "That is Pokemon White 2 from another region (code $code). You need US White 2 (IRDE)." ;;
+        IRDO) echo "" ;;
+        IREO) echo "That is Black 2, not White 2. Put it in the Black 2 box." ;;
+        IRD*) echo "That is Pokemon White 2 from another region (code $code). You need US White 2 (IRDO)." ;;
         IRE*) echo "That is Pokemon Black 2 from another region (code $code). Put a US Black 2 file in the Black 2 box, or a US White 2 file here." ;;
         IRBO|IRBJ|IRBP|IRBK) echo "That is Pokemon Black, not White 2." ;;
         IRAO|IRAJ|IRAP|IRAK) echo "That is Pokemon White, not White 2." ;;
