@@ -764,17 +764,17 @@ def rom_report(path, want="platinum", *, for_followers=False):
     if want in ("black2", "white2"):
         other = "white2" if want == "black2" else "black2"
         other_name = "White 2" if want == "black2" else "Black 2"
-        need, need_code, sha = (("Black 2", "IREE", B2_SHA1) if want == "black2" else ("White 2", "IRDE", W2_SHA1))
-        if code == ("IRDE" if want == "black2" else "IREE"):
+        need, need_code, sha = (("Black 2", "IREO", B2_SHA1) if want == "black2" else ("White 2", "IRDO", W2_SHA1))
+        if code == ("IRDO" if want == "black2" else "IREO"):
             return False, "That is %s, not %s. Put it in the %s box." % (other_name, need, other_name)
         if code.startswith("CPU"):
             return False, "That is Pokemon Platinum, not %s. Put it in the Platinum box." % need
         if code.startswith("IPG") or code.startswith("IPK"):
             return False, "That is HeartGold/SoulSilver, not %s. Put it in the SoulSilver or HeartGold box." % need
-        if want == "black2" and code.startswith("IRE") and code != "IREE":
-            return False, "That is Pokemon Black 2 from another region (%s). It needs the US version (IREE)." % code
-        if want == "white2" and code.startswith("IRD") and code != "IRDE":
-            return False, "That is Pokemon White 2 from another region (%s). It needs the US version (IRDE)." % code
+        if want == "black2" and code.startswith("IRE") and code != "IREO":
+            return False, "That is Pokemon Black 2 from another region (%s). It needs the US version (IREO)." % code
+        if want == "white2" and code.startswith("IRD") and code != "IRDO":
+            return False, "That is Pokemon White 2 from another region (%s). It needs the US version (IRDO)." % code
         if code != need_code:
             return False, "That is not Pokemon %s (game code %s)." % (need, code)
         if _sha1(path) != sha:
