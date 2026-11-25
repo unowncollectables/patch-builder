@@ -102,3 +102,25 @@ setup_build_tools() {
     return 1
   }
 }
+
+# Black 2 battle sprites (SoulSilver / HeartGold "Black 2 sprites" setting): makes b2sprites.bin from the user's own
+# Black 2 / White 2 ROM with the game project's tools/b2sprites/build_pack.sh, cached under ~/.cache/ss3ds-b2sprites and
+# remade only when the ROM or the pack tool changes. Prints the pack path on success, nothing otherwise. Never fatal:
+# without it the setting just keeps the game's own sprites. $1 = game project root.
+b2_sprites_pack() {
+  local root="$1" rom="" tool="$1/tools/b2sprites/build_pack.sh" cache="${HOME:-/tmp}/.cache/ss3ds-b2sprites" key
+  for rom in "${P3DS_BLACK2:-}" "${P3DS_WHITE2:-}"; do [ -n "$rom" ] && [ -f "$rom" ] && break; rom=""; done
+  [ -n "$rom" ] && [ -f "$tool" ] || return 0
+  key="$( { sha1sum < "$rom"; cat "$root/tools/b2sprites/"*; } | sha1sum | cut -c1-16)"
+  mkdir -p "$cache" || return 0
+  if [ ! -f "$cache/b2sprites.bin" ] || [ "$(cat "$cache/key" 2>/dev/null)" != "$key" ]; then
+    say "  Making the Black 2 battle sprites from your Black 2 / White 2 ROM (once, about 5 minutes)..." >&2
+    rm -f "$cache/key"
+    if bash "$tool" "$rom" "$cache/b2sprites.bin" "$cache/work" >&2; then
+      echo "$key" > "$cache/key"; rm -rf "$cache/work/export"
+    else
+      say "  [!]       Black 2 battle sprites could not be made; the game keeps its own battle sprites." >&2; return 0
+    fi
+  fi
+  echo "$cache/b2sprites.bin"
+}

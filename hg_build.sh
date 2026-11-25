@@ -283,6 +283,8 @@ step_export() {
       return 1
     }
   fi
+  B2PACK="$(b2_sprites_pack "$ROOT")"
+  [ -n "$B2PACK" ] && cp -f "$B2PACK" "$o/b2sprites.bin" && ok "Black 2 battle sprites saved too (b2sprites.bin)"
   cat > "$o/How to put this on your 3DS.txt" <<'TXT'
 How to put this on your 3DS
 ===========================
@@ -329,6 +331,9 @@ step_deploy() {
     || { die "copy to the SD card failed or came out different"; hint "Copying to the SD card failed. Re-seat the card and try again; if it keeps failing the card may be damaged."; return 1; }
   # Your own ROM, only if there is none on the card yet. The save (heartgold.sav) is never touched.
   [ -f "$ROM" ] && [ ! -f "$d/heartgold.nds" ] && cp -f "$ROM" "$d/heartgold.nds"
+  # Black 2 battle sprites (only when a Black 2 / White 2 ROM is picked); copied when missing or changed.
+  B2PACK="${B2PACK:-$(b2_sprites_pack "$ROOT")}"
+  if [ -n "$B2PACK" ] && ! cmp -s "$B2PACK" "$d/b2sprites.bin"; then cp -f "$B2PACK" "$d/b2sprites.bin" && ok "Black 2 battle sprites copied (turn them on: L+R+Y > BATTLE > Black 2 sprites)"; fi
   if [ "$CIA_BUILT" = 1 ] && [ -f "$OUTCIA" ]; then
     mkdir -p "$sd/cias" && cp -f "$OUTCIA" "$sd/cias/heartgold3ds.cia" && ok "HOME Menu installer copied to $sd/cias/heartgold3ds.cia (install it with FBI)"
   fi
