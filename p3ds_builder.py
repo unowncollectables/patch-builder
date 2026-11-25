@@ -300,6 +300,10 @@ def sd_copy(game, out_dir, sd, rom, log=print, *, include_cia=True):
         if nds and rom and os.path.isfile(rom) and not os.path.isfile(os.path.join(d, nds)):
             _copy_to_card(rom, os.path.join(d, nds))
             log("  [ok]      your game file copied as %s\n" % nds)
+        b2 = os.path.join(src, "b2sprites.bin")   # Black 2 battle sprites, made from the user's Black 2 / White 2 ROM
+        if game in ("soulsilver", "heartgold") and os.path.isfile(b2):
+            _copy_to_card(b2, os.path.join(d, "b2sprites.bin"))
+            log("  [ok]      Black 2 battle sprites copied (L+R+Y > BATTLE > Black 2 sprites)\n")
         fb = os.path.join(src, "followers.bin")
         if game == "platinum" and os.path.isfile(fb):
             _copy_to_card(fb, os.path.join(d, "followers.bin"))
