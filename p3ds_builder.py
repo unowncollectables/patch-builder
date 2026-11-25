@@ -56,13 +56,14 @@ FRIENDLY = {"check": "Checking setup", "needs": "Working out what is needed", "s
             "full": "Building the whole game (first time, long)", "patches": "Installing your patches",
             "testpatches": "Testing your patches", "relink": "Compiling and linking",
             "followers": "Making following-Pokemon data", "deploy": "Copying to the SD card",
-            "get": "Downloading the project", "build": "Compiling the game (first time, long)", "cia": "Making the HOME Menu installer (.cia)"}
+            "get": "Downloading the project", "build": "Compiling the game (first time, long)",
+            "b2sprites": "Making the Black 2 sprites (first time about 5 minutes)", "cia": "Making the HOME Menu installer (.cia)"}
 
 # Rough weight and expected seconds of each step: the progress bar fills by weight and creeps inside a long step,
 # so a first-time install visibly moves instead of sitting at 0% for half an hour.
 STEP_WEIGHT = {"setup": 6, "link": 1, "stage": 1, "pspoke": 4, "full": 20, "build": 20, "patches": 3, "testpatches": 3,
-               "relink": 4, "followers": 2, "deploy": 1, "cia": 3, "check": 1}
-STEP_SECS = {"setup": 600, "pspoke": 300, "full": 1500, "build": 1500, "relink": 240, "patches": 90, "cia": 180}
+               "relink": 4, "followers": 2, "deploy": 1, "cia": 3, "check": 1, "b2sprites": 4}
+STEP_SECS = {"setup": 600, "pspoke": 300, "full": 1500, "build": 1500, "relink": 240, "patches": 90, "cia": 180, "b2sprites": 300}
 NEED_TEXT = {"setup": "the build tools (Linux packages and devkitPro)", "link": "the project folder link",
              "pspoke": "the Platinum game base (pspoke)", "full": "the first full build of the game"}
 
@@ -177,6 +178,8 @@ def build_command(cfg, root, steps, legacy=False, game="platinum"):
         exports.append("export P3DS_JOBS=1 MAKEFLAGS=-j1")
     if cfg.get("sd") and not IS_WIN:      # on Windows the exe itself copies to the card (sd_copy), WSL never sees it
         exports.append("export P3DS_SD_WANTED=1")
+    if cfg.get("want_b2spr"):
+        exports.append("export P3DS_B2SPRITES=1")
     if game == "black2":
         exports.append("export P3DS_B2W2_GAME=b2")
     elif game == "white2":
@@ -329,6 +332,31 @@ def sd_copy(game, out_dir, sd, rom, log=print, *, include_cia=True):
         return False, "Copying to the SD card failed (%s). Re-seat the card and try again." % (e.strerror or e), d
     return True, "", d
 
+
+
+def sd_copy_b2sprites(out_dir, sd, log):
+    """Sprites-only run on Windows: copy b2sprites.bin into the SoulSilver folder (and HeartGold's, if it is there)."""
+    src = os.path.join(out_dir, "SoulSilver", "b2sprites.bin")
+    if not os.path.isfile(src):
+        return False, "The Black 2 sprites were not found in your output folder (%s). Press the button again." % src, ""
+    if not os.path.isdir(sd):
+        return False, "The SD card (%s) is not there any more. Plug it in and press the button again." % sd, ""
+    done = ""
+    try:
+        for folder in ("soulsilver3ds", "heartgold3ds"):
+            d = os.path.join(sd, "3ds", folder)
+            if folder == "heartgold3ds" and not os.path.isdir(d):
+                continue
+            os.makedirs(d, exist_ok=True)
+            _copy_to_card(src, os.path.join(d, "b2sprites.bin"), verify=True)
+            log("  [ok]      Black 2 sprites copied to %s\n" % d)
+            done = done or d
+    except PermissionError:
+        return False, "The SD card is write-protected or in use. Slide its lock switch up, plug it back in, and try again.", ""
+    except OSError as e:
+        return False, "Copying to the SD card failed (%s). Re-seat the card and try again." % (e.strerror or e), ""
+    log("  Turn them on in the game: L+R+Y > BATTLE > Black 2 sprites.\n")
+    return True, "", done
 
 def update_asset(release):
     """Return the published Windows asset and its SHA-256 for this repository."""
@@ -934,6 +962,7 @@ def load_settings():
     out["want_pb"] = bool(d.get("want_pb", False))
     out["want_b2"] = bool(d.get("want_b2", False))
     out["want_w2"] = bool(d.get("want_w2", False))
+    out["want_b2spr"] = bool(d.get("want_b2spr", False))   # Black 2 sprites for SoulSilver / HeartGold
     out["autofind"] = bool(d.get("autofind", False))
     return out
 
@@ -951,10 +980,30 @@ def selected_games(c):
                            ("pinball", "want_pb"), ("black2", "want_b2"), ("white2", "want_w2")) if c.get(k)]
 
 
+def sprites_only(c):
+    """Only "Black 2 sprites" is ticked: make b2sprites.bin, build no game."""
+    return bool(c.get("want_b2spr")) and not selected_games(c)
+
+
+def b2_sprite_rom(c):
+    """(file, game) the Black 2 sprites are made from: the Black 2 file, else the White 2 one."""
+    if c.get("white2") and not c.get("black2"):
+        return c["white2"], "white2"
+    return c.get("black2", ""), "black2"
+
+
+def run_games(c):
+    """Games the worker runs: the ticked ones, or SoulSilver's project for a sprites-only run."""
+    return selected_games(c) or (["soulsilver"] if sprites_only(c) else [])
+
+
 def chosen_roms(c):
-    """Files required for the selected games, plus Platinum's optional SoulSilver file."""
+    """Files required for the selected games, plus Platinum's optional SoulSilver file and the Black 2 sprites file."""
     games = selected_games(c)
     checks = [(c[g], g, False) for g in games]
+    if c.get("want_b2spr") and not ({"black2", "white2"} & set(games)):
+        rom, g = b2_sprite_rom(c)
+        checks.append((rom, g, False))
     if "platinum" in games and "soulsilver" not in games and c.get("soulsilver"):
         checks.append((c["soulsilver"], "soulsilver", True))
     return checks
@@ -963,6 +1012,8 @@ def chosen_roms(c):
 def plan_for(game, pipe, c, needs=None):
     """[(needs_root, steps)] for one game. pipe 'auto' uses the ##NEED lines from the game's 'needs' step."""
     cia = ["cia"] if c.get("cia") else []
+    if sprites_only(c) and pipe in ("auto", "full", "quick"):
+        return ([(True, ["setup"])] if "setup" in (needs or []) else []) + [(False, ["b2sprites"])]
     if pipe == "auto":
         needs = needs or []
         if game == "platinum":
@@ -1022,6 +1073,7 @@ def run_gui():
     want_pb = tk.BooleanVar(value=cfg["want_pb"])
     want_b2 = tk.BooleanVar(value=cfg["want_b2"])
     want_w2 = tk.BooleanVar(value=cfg["want_w2"])
+    want_b2spr = tk.BooleanVar(value=cfg["want_b2spr"])
     wants = (("platinum", want_plat), ("soulsilver", want_ss), ("heartgold", want_hg),
              ("pinball", want_pb), ("black2", want_b2), ("white2", want_w2))
     want_cia = tk.BooleanVar(value=cfg["cia"])
@@ -1160,7 +1212,9 @@ def run_gui():
                 selected[game] = path
         for game, path in selected.items():
             vars_[game].set(os.path.normpath(path) if IS_WIN else path)
-            game_choices[game].set(True)
+            # with "Black 2 sprites" ticked, a Black 2 / White 2 file is for the sprites unless that game is ticked too
+            if not (want_b2spr.get() and game in ("black2", "white2")):
+                game_choices[game].set(True)
         if skipped:
             file_note.configure(text="\n".join(skipped))
             file_note.pack(anchor="w", before=games_area, pady=(0, 6))
@@ -1203,6 +1257,8 @@ def run_gui():
     ttk.Checkbutton(options, text="Make a HOME Menu installer (.cia)", variable=want_cia).pack(side="left")
     low_memory_btn = ttk.Checkbutton(options, text="Use less memory (slower)", variable=low_memory)
     low_memory_btn.pack(side="left", padx=(12, 0))
+    ttk.Checkbutton(outer, text="Black 2 sprites for SoulSilver / HeartGold (made from your Black 2 or White 2 file; "
+                    "tick only this to make just the sprites)", variable=want_b2spr).pack(anchor="w", pady=(0, 6))
 
     ttk.Separator(outer).pack(fill="x", pady=4)
     ttk.Label(outer, text="3. SD card (optional)", style="Step.TLabel").pack(anchor="w", pady=(3, 2))
@@ -1470,7 +1526,9 @@ def run_gui():
     def refresh(*_):
         for key, var in wants:
             # A saved SoulSilver file can also be used for Platinum's optional followers.
-            if var.get() or (key == "soulsilver" and want_plat.get() and vars_[key].get().strip()):
+            sprites = want_b2spr.get() and ((key == "black2" and not (vars_["white2"].get().strip() and not vars_["black2"].get().strip()))
+                                            or (key == "white2" and vars_["white2"].get().strip() and not vars_["black2"].get().strip()))
+            if var.get() or sprites or (key == "soulsilver" and want_plat.get() and vars_[key].get().strip()):
                 boxes[key].pack(fill="x", pady=(0, 6))
                 check_rom(key)
             else:
@@ -1491,6 +1549,7 @@ def run_gui():
     want_pb.trace_add("write", refresh)
     want_b2.trace_add("write", refresh)
     want_w2.trace_add("write", refresh)
+    want_b2spr.trace_add("write", refresh)
     want_cia.trace_add("write", refresh)
 
     # ---- running -------------------------------------------------------------------------------------
@@ -1499,6 +1558,7 @@ def run_gui():
         c["want_plat"], c["want_ss"], c["want_hg"], c["cia"] = want_plat.get(), want_ss.get(), want_hg.get(), want_cia.get()
         c["want_pb"] = want_pb.get()
         c["want_b2"], c["want_w2"] = want_b2.get(), want_w2.get()
+        c["want_b2spr"] = want_b2spr.get()
         c["offline"] = offline.get()
         c["low_memory"] = low_memory.get()
         c["autofind"] = autofind.get()
@@ -1684,6 +1744,16 @@ def run_gui():
 
     def copy_to_sd(pipe, c):
         ok = True
+        if IS_WIN and c.get("sd") and pipe in ("auto", "full", "quick") and not st["cancel"] and sprites_only(c):
+            q.put(("log", "\n$ copy the Black 2 sprites to the SD card (from Windows)\n", None))
+            q.put(("step", "deploy", None))
+            good, msg, d = sd_copy_b2sprites(c["out"], c["sd"], lambda t: q.put(("log", t, None)))
+            if not good:
+                st["hint"], st["failed"] = msg, "deploy"
+                q.put(("log", "ERROR: " + msg + "\n", "bad"))
+                return False
+            st["installed"].append(("", d))
+            return True
         if IS_WIN and c.get("sd") and pipe in ("auto", "full", "quick") and not st["cancel"]:
             for g in selected_games(c):
                 if st["cancel"]:
@@ -1705,7 +1775,7 @@ def run_gui():
             q.put(("log", "This PC:\n", None))
             for good, text in pc_report(c["out"]):
                 q.put(("log", "  [%s] %s\n" % ("ok" if good else "MISSING", text), "good" if good else "bad"))
-        games = selected_games(c)
+        games = run_games(c)
         plans = []      # (game, needs_root, steps)
         if pipe in ("auto", "full", "quick", "check", "install", "test", "cleantree"):
             if pipe == "test":
@@ -1726,7 +1796,7 @@ def run_gui():
                     miss = [NEED_TEXT[n] for n in needs if n in NEED_TEXT]
                     q.put(("log", ("%s: still needed: %s.\n" % (GAMES[g]["name"], "; ".join(miss))) if miss else
                            "%s: everything it needs is already installed.\n" % GAMES[g]["name"], None))
-                    if "full" in needs:
+                    if "full" in needs and not sprites_only(c):
                         q.put(("log", "First build of %s: this one takes a long time. Later builds are quick.\n" % GAMES[g]["name"], None))
                 for root_needed, steps in plan_for(g, pipe, c, needs):
                     plans.append((g, root_needed, steps))
@@ -1778,7 +1848,7 @@ def run_gui():
         if pipe == "update":            # same as Build, but always fetches the latest from GitHub
             c["offline"] = False
             pipe = "auto"
-        games = selected_games(c)
+        games = run_games(c)
         if c.get("autofind"):
             for g in games:
                 if not c[g]:
@@ -1787,7 +1857,7 @@ def run_gui():
                         vars_[g].set(os.path.normpath(f) if IS_WIN else f)
                         c[g] = vars_[g].get()
         if not games:
-            messagebox.showwarning("Which game?", "Choose at least one game.")
+            messagebox.showwarning("Which game?", "Choose at least one game, or tick Black 2 sprites.")
             return
         for g in games:
             rok, rmsg = project_report(c[GAMES[g]["repo"]], g)
@@ -1878,7 +1948,7 @@ def run_gui():
                                           "Clear temporary build files for %s? The next build will take longer." % names):
                 return
         st.update(cancel=False, hint="", failed="", installed=[], project={}, cia=c["cia"], out=c["out"],
-                  head={}, remote={})
+                  head={}, remote={}, cfg=c)
         hide_banner()
         log.configure(state="normal")
         log.delete("1.0", "end")
@@ -1935,6 +2005,8 @@ def run_gui():
             show_banner(True, msg)
             if pipe == "check":
                 toggle("details", True)
+        elif st["installed"] and sprites_only(st.get("cfg", {})):
+            show_banner(True, "Black 2 sprites copied to your SD card. In the game: L+R+Y > BATTLE > Black 2 sprites.", outd)
         elif st["installed"]:
             names = " and ".join("%s 3DS" % GAMES[g]["name"] for g, _ in st["installed"] if g)
             more = " To use the HOME Menu version instead, install the .cia from the cias folder on the card with FBI." if st["cia"] else ""

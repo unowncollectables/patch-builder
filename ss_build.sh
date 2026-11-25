@@ -338,6 +338,27 @@ step_deploy() {
   step_clean >/dev/null 2>&1 || true      # tidy leftovers after a good copy (see step_clean)
 }
 
+# ------------------------------------------------------------------------------------------------ b2sprites
+# Only the Black 2 sprites (builder: "Black 2 sprites" ticked, no game ticked): makes b2sprites.bin from the picked
+# Black 2 / White 2 file and puts it in the output folder and, with an SD card, in the SoulSilver and HeartGold folders.
+step_b2sprites() {
+  B2PACK="$(b2_sprites_pack "$ROOT")"
+  [ -n "$B2PACK" ] || { die "the Black 2 sprites could not be made"; hint "Pick your Black 2 or White 2 game file (US) and press the button again. The lines above say what went wrong."; return 1; }
+  local o="$P3DS_OUT/SoulSilver" sd="${P3DS_SD:-}" d n=0
+  if [ -n "${P3DS_OUT:-}" ]; then
+    mkdir -p "$o" 2>/dev/null && cp -f "$B2PACK" "$o/b2sprites.bin" && ok "Black 2 sprites saved to your output folder (SoulSilver/b2sprites.bin)"
+    echo "##OUTPUT:SoulSilver"
+  fi
+  [ -n "$sd" ] || return 0
+  [ -d "$sd" ] || { die "SD card folder not found: $sd"; hint "Plug the card in, pick it in the SD card box again, press the button again."; return 1; }
+  for d in "$sd/3ds/soulsilver3ds" "$sd/3ds/heartgold3ds"; do
+    [ -d "$d" ] || [ "$d" = "$sd/3ds/soulsilver3ds" ] || continue
+    mkdir -p "$d" && cp -f "$B2PACK" "$d/b2sprites.bin" && n=$((n + 1)) && ok "Black 2 sprites copied to $d"
+  done
+  [ "$n" -gt 0 ] || { die "could not copy the Black 2 sprites to the SD card"; hint "The SD card is write-protected or full. Check it and press the button again."; return 1; }
+  say "Turn them on in the game: L+R+Y > BATTLE > Black 2 sprites."
+}
+
 # ------------------------------------------------------------------------------------------------ driver
 # ------------------------------------------------------------------------------------------------ clean
 # Removes only leftovers this builder made. NEVER touches saves, save_backups/, config, ROMs (.nds), the toolchain
@@ -380,7 +401,7 @@ step_clean() {
 run_step() {
   name="$1"
   case "$name" in
-    check|needs|setup|stage|build|link|cia|deploy|clean|cleantree) ;;
+    check|needs|setup|stage|build|link|cia|deploy|clean|cleantree|b2sprites) ;;
     *) echo "unknown step: $name" >&2; return 2 ;;
   esac
   echo "##STEP:$name:START"
