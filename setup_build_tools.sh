@@ -106,9 +106,11 @@ setup_build_tools() {
 # Black 2 battle sprites (SoulSilver / HeartGold "Black 2 sprites" setting): makes b2sprites.bin from the user's own
 # Black 2 / White 2 ROM with the game project's tools/b2sprites/build_pack.sh, cached under ~/.cache/ss3ds-b2sprites and
 # remade only when the ROM or the pack tool changes. Prints the pack path on success, nothing otherwise. Never fatal:
-# without it the setting just keeps the game's own sprites. $1 = game project root.
+# without it the setting just keeps the game's own sprites. $1 = game project root. Only when the builder's
+# "Black 2 sprites" box is ticked (P3DS_B2SPRITES=1).
 b2_sprites_pack() {
   local root="$1" rom="" tool="$1/tools/b2sprites/build_pack.sh" cache="${HOME:-/tmp}/.cache/ss3ds-b2sprites" key
+  [ "${P3DS_B2SPRITES:-0}" = 1 ] || return 0
   for rom in "${P3DS_BLACK2:-}" "${P3DS_WHITE2:-}"; do [ -n "$rom" ] && [ -f "$rom" ] && break; rom=""; done
   [ -n "$rom" ] && [ -f "$tool" ] || return 0
   key="$( { sha1sum < "$rom"; cat "$root/tools/b2sprites/"*; } | sha1sum | cut -c1-16)"
