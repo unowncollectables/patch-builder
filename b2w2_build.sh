@@ -275,13 +275,22 @@ step_cia() {
     hint "The HOME Menu tools could not be built. Uncheck the HOME Menu installer to build the Homebrew Launcher version."
     return 1
   }
-  local makerom
+  local makerom bannertool art
   makerom="$CIA_TOOLS/bin/makerom"
   [ -x "$makerom" ] || makerom="$CIA_TOOLS/bin/makerom.exe"
   [ -x "$makerom" ] || { die "makerom is missing after the tools build"; return 1; }
+  bannertool="$CIA_TOOLS/bin/bannertool"
+  [ -x "$bannertool" ] || bannertool="$CIA_TOOLS/bin/bannertool.exe"
+  [ -x "$bannertool" ] || { die "bannertool is missing after the tools build"; return 1; }
+  art="$ROOT/n3ds/build/$SLOT/home-menu"
   rm -f "$OUTCIA"
+  python3 "$ROOT/scripts/n3ds_home_menu_art.py" "$ROM" "$art" --game "$TITLE" --bannertool "$bannertool" || {
+    die "could not prepare the HOME Menu icon and banner"
+    return 1
+  }
   # The port's RSF already requests 804 MHz, L2, and core 2. No ROM is packed into the CIA; data stays on the SD card.
-  "$makerom" -f cia -o "$OUTCIA" -elf "$OUTELF" -rsf "$ROOT/n3ds/cia/$RSF" -target t -exefslogo || {
+  "$makerom" -f cia -o "$OUTCIA" -elf "$OUTELF" -rsf "$ROOT/n3ds/cia/$RSF" \
+    -icon "$art/icon.smdh" -banner "$art/banner.bnr" -target t -exefslogo || {
     die "making the .cia failed (error above)"
     hint "The HOME Menu (.cia) version failed. The .3dsx still works. Uncheck the HOME Menu installer, or press 'Copy details for help'."
     rm -f "$OUTCIA"
