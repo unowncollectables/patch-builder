@@ -155,7 +155,7 @@ step_check() {
 
 step_needs() {
   local tools=ok
-  for c in git make patch rsync curl python3 sha1sum; do command -v $c >/dev/null || tools=missing; done
+  for c in git make patch rsync curl python3 sha1sum pkg-config; do command -v $c >/dev/null || tools=missing; done
   python3 -I -c 'import ndspy, PIL, numpy' 2>/dev/null || tools=missing
   devkitpro_ready "$DKP" || tools=missing
   [ $tools = ok ] || echo "##NEED:setup"
