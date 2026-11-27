@@ -112,7 +112,14 @@ b2_sprites_pack() {
   local root="$1" rom="" tool="$1/tools/b2sprites/build_pack.sh" cache="${HOME:-/tmp}/.cache/ss3ds-b2sprites" key
   [ "${P3DS_B2SPRITES:-0}" = 1 ] || return 0
   for rom in "${P3DS_BLACK2:-}" "${P3DS_WHITE2:-}"; do [ -n "$rom" ] && [ -f "$rom" ] && break; rom=""; done
-  [ -n "$rom" ] && [ -f "$tool" ] || return 0
+  if [ -z "$rom" ]; then
+    say "  [!]       Black 2 sprites: the Black 2 / White 2 file was not found by the build, so no sprite pack was made." >&2
+    hint "The Black 2 sprites were NOT made: the builder could not read your Black 2 or White 2 file. Pick it again in its box, then build again." >&2; return 0
+  fi
+  if [ ! -f "$tool" ]; then
+    say "  [!]       Black 2 sprites: this game project has no sprite tool (tools/b2sprites), so no sprite pack was made." >&2
+    hint "The Black 2 sprites were NOT made because the downloaded game project is out of date. Build again so it pulls the newest version." >&2; return 0
+  fi
   key="$( { sha1sum < "$rom"; cat "$root/tools/b2sprites/"*; } | sha1sum | cut -c1-16)"
   mkdir -p "$cache" || return 0
   if [ ! -f "$cache/b2sprites.bin" ] || [ "$(cat "$cache/key" 2>/dev/null)" != "$key" ]; then
@@ -121,7 +128,8 @@ b2_sprites_pack() {
     if bash "$tool" "$rom" "$cache/b2sprites.bin" "$cache/work" >&2; then
       echo "$key" > "$cache/key"; rm -rf "$cache/work/export"
     else
-      say "  [!]       Black 2 battle sprites could not be made; the game keeps its own battle sprites." >&2; return 0
+      say "  [!]       Black 2 battle sprites could not be made; the game keeps its own battle sprites." >&2
+      hint "The Black 2 sprites were NOT made (see the lines above). Use a clean US Black 2 or White 2 file, make sure the PC is online, and build again." >&2; return 0
     fi
   fi
   echo "$cache/b2sprites.bin"

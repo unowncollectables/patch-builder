@@ -328,7 +328,7 @@ step_deploy() {
   [ -f "$ROM" ] && [ ! -f "$d/soulsilver.nds" ] && cp -f "$ROM" "$d/soulsilver.nds"
   # Black 2 battle sprites (only when a Black 2 / White 2 ROM is picked); copied when missing or changed.
   B2PACK="${B2PACK:-$(b2_sprites_pack "$ROOT")}"
-  if [ -n "$B2PACK" ] && ! cmp -s "$B2PACK" "$d/b2sprites.bin"; then cp -f "$B2PACK" "$d/b2sprites.bin" && ok "Black 2 battle sprites copied (turn them on: L+R+Y > BATTLE > Black 2 sprites)"; fi
+  if [ -n "$B2PACK" ] && ! cmp -s "$B2PACK" "$d/b2sprites.bin"; then cp -f "$B2PACK" "$d/b2sprites.bin" && ok "Black 2 battle sprites copied. They stay OFF until you turn them on in the game: L+R+Y > BATTLE > Black 2 sprites"; fi
   if [ "$CIA_BUILT" = 1 ] && [ -f "$OUTCIA" ]; then
     mkdir -p "$sd/cias" && cp -f "$OUTCIA" "$sd/cias/soulsilver3ds.cia" && ok "HOME Menu installer copied to $sd/cias/soulsilver3ds.cia (install it with FBI)"
   fi
