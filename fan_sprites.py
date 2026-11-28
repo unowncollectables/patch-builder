@@ -49,17 +49,39 @@ OUTPUT FORMAT (followers_fan.bin, all integers little-endian):
            nibble-packed over the wide strip image exactly as the
            runtime strip buffer holds them, then the strip's
            16-colour RGB555 palette (u16 x 16, entry 0 unused).
-           The size rides in the record because one entry's two sheets
-           can disagree: Reuniclus's shiny sheet is drawn at half the
-           scale of its normal sheet (256px vs 512px), so a shiny
-           Reuniclus follows at 32px where a normal one follows at 64.
+           The size rides in the record because each strip is converted
+           independently. Both strips of an entry use the species' target
+           size (see SIZING below), so the two agree unless a sheet's art
+           is too wide for the frame and lands width-bound.
+
+SIZING (added in 1.5.2). The first release sized each follower from the
+fan sheet's canvas (64px cells -> 32 frame, 128px cells -> 64) and fit
+the art into the frame, so nearly every fan follower drew at the same
+~29px (32 frame) or ~50px (64 frame) of content height whatever the
+species -- a Victini as tall as a Golurk. The game's own scale language
+is different, and it is measurable from the user's ROM: the runtime
+draws a follower's world height as (strip content height in px) x 7/8
+whatever the canvas, and across the 546 species with native TPoke
+strips the content height tracks the species' Pokedex height (personal
+data, u16 at 0x24, decimetres) -- bucket medians dm 0-4 -> 16px,
+5-9 -> 18, 10-14 -> 21, 15-19 -> 24, 20-24 -> 25, 30+ -> 33-38, with
+the big species graduating to the 64px canvas once content passes
+~30px. The converter therefore reads each species' height from the
+staged personal data (nitrofs/a/0/1/6 beside the output folder),
+derives a target content height from the anchors in
+target_content_height(), picks the frame the game would (32 up to 30px
+of content, else 64), and scales the art to the target instead of to
+the canvas. The fan artists' proportions are preserved; only the
+absolute scale changes.
 
 CONVERSION RULES (the floor pipeline's geometry, PIPELINE.md SS3):
 each source sheet is 4 direction rows [down, left, right, up] x 4 frame
 columns; columns 0 and 1 are the two distinct walk poses (columns 2 and 3
 repeat them -- verified by pairwise diff). The 8 used cells share one
-union content box and one scale (min(frame/box_w, frame/box_h), capped at
-2.0x), resampled nearest-neighbour on palette indices, anchored
+union content box and one scale: the scale that puts the box's height at
+the species' target content height (see SIZING above), clamped so the
+box never exceeds the frame's width and never above 2.0x, resampled
+nearest-neighbour on palette indices, anchored
 bottom-centre with feet on the frame floor. No mirroring anywhere: the
 pack has true left and right art, unlike the floor.
 
@@ -296,18 +318,96 @@ def rgb555(r, g, b):
     return (r >> 3) | ((g >> 3) << 5) | ((b >> 3) << 10)
 
 
-def convert_sheet(path):
-    """One pack sheet -> (frame_size, indices_bytes, palette_u16s, stats)."""
+# --------------------------------------------------------------------------
+# Sizing: target content height per species, from the game's own scale.
+# Anchors are (Pokedex height in decimetres, strip content height in px)
+# fitted to the bucket medians measured across all 546 native TPoke
+# species (see SIZING in the header). Piecewise-linear between anchors.
+# --------------------------------------------------------------------------
+_SIZE_ANCHORS = ((0, 15.0), (5, 17.5), (10, 20.0), (15, 23.0), (20, 24.5),
+                 (25, 26.0), (30, 34.0), (40, 35.0), (70, 36.0))
+
+
+def target_content_height(dm):
+    """Target strip content height (px) for a species of Pokedex height dm."""
+    pts = _SIZE_ANCHORS
+    if dm <= pts[0][0]:
+        t = pts[0][1]
+    elif dm >= pts[-1][0]:
+        t = pts[-1][1]
+    else:
+        for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+            if x0 <= dm <= x1:
+                t = y0 + (y1 - y0) * (dm - x0) / (x1 - x0)
+                break
+    return max(12, int(t + 0.5))
+
+
+def frame_for_target(target_h):
+    """The canvas the game would use: 32 up to 30px of content, else 64."""
+    return 32 if target_h <= 30 else 64
+
+
+def load_species_heights(out_dir, personal_path=None):
+    """Pokedex heights (dm) for the 103 from the staged personal data.
+
+    The personal NARC (nitrofs a/0/1/6) holds one 76-byte record per
+    species, index = species; the height is the u16 at 0x24. It is staged
+    beside the output folder by the game build; --personal overrides the
+    location. Fails loudly: sizing from anything else would be a guess.
+    """
+    path = personal_path or os.path.join(out_dir, "nitrofs", "a", "0", "1", "6")
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+    except OSError:
+        raise Fail("the staged personal data (%s) is missing -- the fan tier "
+                   "sizes its sprites from the game's own data, so the game "
+                   "must be staged before the pack is converted" % path)
+    if len(data) < 16 or data[:4] != b"NARC":
+        raise Fail("%s is not the game's personal data archive" % path)
+    entries = None
+    gmif = None
+    pos = 16
+    while pos + 8 <= len(data):
+        size = struct.unpack_from("<I", data, pos + 4)[0]
+        if size < 8:
+            break
+        if data[pos:pos + 4] == b"BTAF":
+            count = struct.unpack_from("<I", data, pos + 8)[0]
+            entries = [struct.unpack_from("<II", data, pos + 12 + i * 8)
+                       for i in range(count)]
+        elif data[pos:pos + 4] == b"GMIF":
+            gmif = pos + 8
+        pos += size
+    if entries is None or gmif is None:
+        raise Fail("%s has an unexpected layout" % path)
+    heights = {}
+    for species in SPECIES_103:
+        if species >= len(entries):
+            raise Fail("the personal data has no record for species %d" % species)
+        start, end = entries[species]
+        if end - start < 0x26:
+            raise Fail("the personal record for species %d is truncated" % species)
+        heights[species] = struct.unpack_from("<H", data, gmif + start + 0x24)[0]
+    return heights
+
+
+def convert_sheet(path, target_h):
+    """One pack sheet -> (frame_size, indices_bytes, palette_u16s, stats).
+
+    The art is scaled so its content height lands on target_h px (the
+    species' game-scale size; see SIZING in the header), on the frame the
+    game would pick for that height. The sheet's own canvas size no
+    longer decides anything -- it is only validated for sanity.
+    """
     width, height, px = read_png(path)
     if width != height or width % 4:
         raise Fail("%s is not a square 4x4 overworld sheet" % os.path.basename(path))
     cell = width // 4
-    if cell == 64:
-        frame = 32
-    elif cell == 128:
-        frame = 64
-    else:
+    if cell not in (64, 128):
         raise Fail("%s has an unexpected cell size (%d px)" % (os.path.basename(path), cell))
+    frame = frame_for_target(target_h)
 
     def pixel(cx, cy, x, y):
         at = ((cy * cell + y) * width + (cx * cell + x)) * 4
@@ -367,7 +467,7 @@ def convert_sheet(path):
     if box[2] == 0:
         raise Fail("%s appears to be empty" % os.path.basename(path))
     bw, bh = box[2] - box[0], box[3] - box[1]
-    scale = min(frame / bw, frame / bh)
+    scale = min(target_h / bh, frame / bw)
     if scale > 2.0:
         scale = 2.0
     nw = max(1, int(bw * scale + 0.5))
@@ -396,7 +496,8 @@ def convert_sheet(path):
     palette = [0] * 16
     for i, v in enumerate(kept):
         palette[i + 1] = v
-    stats = {"colours": len(hist), "remapped_pixels": remapped}
+    stats = {"colours": len(hist), "remapped_pixels": remapped,
+             "target_h": target_h, "content_h": nh}
     return frame, bytes(packed), palette, stats
 
 
@@ -531,7 +632,8 @@ def _obtain_from_rar(pack, workdir):
 # --------------------------------------------------------------------------
 # Assembly.
 # --------------------------------------------------------------------------
-def build(pack, out_dir, report_path=None):
+def build(pack, out_dir, report_path=None, personal_path=None):
+    heights = load_species_heights(out_dir, personal_path)
     with tempfile.TemporaryDirectory(prefix="fan-sprites-") as workdir:
         root = obtain_sheets(pack, workdir)
         missing = [name for name in ALLOWLIST_FILES
@@ -545,7 +647,8 @@ def build(pack, out_dir, report_path=None):
             entry_stats = {}
             for shiny in (False, True):
                 name = sheet_name(species, form, shiny)
-                frame, indices, palette, stats = convert_sheet(os.path.join(root, name))
+                frame, indices, palette, stats = convert_sheet(
+                    os.path.join(root, name), target_content_height(heights[species]))
                 pair.append(struct.pack("<B", frame) + indices
                             + struct.pack("<16H", *palette))
                 entry_stats["shiny" if shiny else "normal"] = dict(stats, frame_size=frame)
@@ -608,13 +711,16 @@ def main(argv=None):
     parser.add_argument("--out", required=True,
                         help="output folder (the staged game folder)")
     parser.add_argument("--report", help="optional JSON conversion report path")
+    parser.add_argument("--personal",
+                        help="the game's personal data archive (nitrofs a/0/1/6); "
+                             "default: <out>/nitrofs/a/0/1/6")
     args = parser.parse_args(argv)
     if not os.path.exists(args.pack):
         print("fan_sprites: pack not found: %s" % args.pack, file=sys.stderr)
         return 2
     os.makedirs(args.out, exist_ok=True)
     try:
-        return build(args.pack, args.out, args.report)
+        return build(args.pack, args.out, args.report, args.personal)
     except Fail as e:
         print("fan_sprites: %s" % e, file=sys.stderr)
         return e.code
