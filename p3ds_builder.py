@@ -19,7 +19,7 @@ HERE = os.path.dirname(os.path.abspath(sys.argv[0] if getattr(sys, "frozen", Fal
 # The .exe carries its own copy of the build scripts (build_exe.bat bundles them), so it works from any folder.
 SCRIPTS = getattr(sys, "_MEIPASS", HERE)
 SETTINGS = os.path.join(os.path.expanduser("~"), ".p3ds_builder.json")
-FIELDS = ["repo", "ssrepo", "hgrepo", "pbrepo", "b2w2repo", "platinum", "soulsilver", "heartgold", "pinball", "black2", "white2", "out", "sd"]
+FIELDS = ["repo", "ssrepo", "hgrepo", "pbrepo", "b2w2repo", "platinum", "soulsilver", "heartgold", "pinball", "black2", "white2", "fanpack", "out", "sd"]
 DEFAULT_OUT = os.path.join(os.path.expanduser("~"), "Documents", "Pokemon 3DS Builds")
 LAST_LOG = os.path.join(DEFAULT_OUT, "p3ds_builder_last_log.txt")   # easy to find in Documents (was your user folder)
 PLAT_SHA1 = "0862ec35b24de5c7e2dcb88c9eea0873110d755c"
@@ -184,7 +184,7 @@ def build_command(cfg, root, steps, legacy=False, game="platinum"):
         exports.append("export P3DS_B2W2_GAME=b2")
     elif game == "white2":
         exports.append("export P3DS_B2W2_GAME=w2")
-    for key, var in (("platinum", "P3DS_PLATINUM"), ("soulsilver", "P3DS_SOULSILVER"), ("heartgold", "P3DS_HEARTGOLD"), ("pinball", "P3DS_PINBALL"), ("black2", "P3DS_BLACK2"), ("white2", "P3DS_WHITE2"), ("sd", "P3DS_SD"), ("out", "P3DS_OUT")):
+    for key, var in (("platinum", "P3DS_PLATINUM"), ("soulsilver", "P3DS_SOULSILVER"), ("heartgold", "P3DS_HEARTGOLD"), ("pinball", "P3DS_PINBALL"), ("black2", "P3DS_BLACK2"), ("white2", "P3DS_WHITE2"), ("fanpack", "P3DS_FAN_PACK"), ("sd", "P3DS_SD"), ("out", "P3DS_OUT")):
         if key == "sd" and IS_WIN:
             continue
         if cfg.get(key):
@@ -320,6 +320,11 @@ def sd_copy(game, out_dir, sd, rom, log=print, *, include_cia=True):
             hdr = os.path.join(src, "rom_header.bin")
             if os.path.isfile(hdr):
                 _copy_to_card(hdr, os.path.join(d, "rom_header.bin"))
+            for extra in ("followers_fan.bin", "FOLLOWER_CREDITS.txt"):
+                p = os.path.join(src, extra)
+                if os.path.isfile(p):
+                    _copy_to_card(p, os.path.join(d, extra))
+                    log("  [ok]      %s copied to %s\n" % (extra, d))
         if include_cia and os.path.isfile(os.path.join(src, cia)):
             os.makedirs(os.path.join(sd, "cias"), exist_ok=True)
             _copy_to_card(os.path.join(src, cia), os.path.join(sd, "cias", cia))
@@ -1372,6 +1377,7 @@ def run_gui():
 
     followers_btn = ttk.Button(adv, text="Add SoulSilver for Platinum followers…", command=pick_followers)
     followers_btn.pack(anchor="w", pady=(0, 8))
+    field(adv, "fanpack", "Follower sprite pack for Black 2 / White 2 (.rar or .zip, optional — credited fan-made follower sprites)", "file", "Browse…")
     ttk.Separator(adv).pack(fill="x", pady=(0, 8))
     ttk.Label(adv, text="Project folders: leave empty and the builder downloads them for you (into your Linux/WSL home).",
               foreground=MUTED, wraplength=WRAP).pack(anchor="w", pady=(0, 6))

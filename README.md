@@ -68,6 +68,7 @@ The builder backs up existing saves in the game’s `save_backups/` folder befor
 <summary><strong>Advanced options and Platinum followers</strong></summary>
 
 - To add following Pokémon to Platinum, select Platinum and use **Advanced → Add SoulSilver for Platinum followers** to choose a US SoulSilver dump. Building both games together also provides the SoulSilver file to Platinum.
+- Black 2 / White 2 followers: most Pokémon walk natively, but 103 species have no walking sprite in the game. If you have the fan-made overworld sprite pack (a `.rar` or `.zip`), pick it under **Advanced → Follower sprite pack for Black 2 / White 2**. The build converts only the sheets whose artists allow free use with credit (the list is fixed in `fan_sprites.py`) into `followers_fan.bin`, and writes `FOLLOWER_CREDITS.txt` naming the artists; both files are copied to the card with the game. Without a pack, those species use the port's own battle-sprite conversion instead. Nothing from the pack is included with the builder — you supply it, like your game file.
 - Leave project folders empty for automatic downloads into your Linux or WSL home. Choose a folder manually to use an existing checkout.
 - **Advanced** includes manual game selection, Offline, Quick rebuild, Full build, and Test Platinum patches.
 

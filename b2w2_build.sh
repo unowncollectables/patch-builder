@@ -12,6 +12,10 @@
 #   all       check stage build [cia] deploy        quick   build [cia] deploy
 # Environment: P3DS_ROOT (Pokemon-Black2-White2-New3ds clone), P3DS_B2W2_GAME=b2|w2,
 #              P3DS_BLACK2 / P3DS_WHITE2 (path to the matching .nds), P3DS_SD (optional), P3DS_CIA=1.
+#              P3DS_FAN_PACK (optional): the fan overworld sprite pack (.rar/.zip/folder) for the
+#              credited fan-tier follower sprites; the build step converts it (allowlisted sheets
+#              only, see fan_sprites.py) into followers_fan.bin + FOLLOWER_CREDITS.txt in the staged
+#              game folder. Without it, any stale fan files are removed and the build is unchanged.
 # Black 2 and White 2 are two outputs of the same source tree. The ROM is never embedded in the
 # installer or copied to the card; the game reads staged nitrofs/ and overlays/. No .sav is created.
 set -uo pipefail
@@ -228,6 +232,12 @@ step_setup() {
     }
   fi
   have_ninja && ok "ninja" || { die "ninja is still missing after setup"; return 1; }
+  # A RAR reader is only needed for the optional follower sprite pack; best effort.
+  if ! command -v unar >/dev/null && ! command -v unrar >/dev/null && ! command -v 7z >/dev/null; then
+    say "Installing unar (only needed if you use the follower sprite pack)..."
+    as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq unar >/dev/null 2>&1 \
+      && ok "unar" || say "  [--]      unar not installed; the follower sprite pack can still be supplied as a .zip or a folder"
+  fi
   say "Setup done."
 }
 
@@ -245,6 +255,26 @@ step_stage() {
   ok "$TITLE ROM verified (US, SHA1 matches)"
 }
 
+# ------------------------------------------------------------------------------------------------ fan sprites
+# Optional credited fan-tier follower sprites (fan_sprites.py). With P3DS_FAN_PACK set, convert the
+# user's pack into the staged game folder; without it, remove any stale fan files so the staged
+# output is exactly what a build before this feature produced.
+fansprites_convert() {
+  local bin="$STAGED/followers_fan.bin" credits="$STAGED/FOLLOWER_CREDITS.txt"
+  if [ -n "${P3DS_FAN_PACK:-}" ]; then
+    [ -e "$P3DS_FAN_PACK" ] || { die "follower sprite pack not found: $P3DS_FAN_PACK"; hint "The follower sprite pack file could not be found. Pick it again in Advanced, or clear the field to build without it."; return 1; }
+    say "Making the credited fan-tier follower sprites from your sprite pack (only the sheets the artists allow are used)..."
+    python3 "$HERE/fan_sprites.py" --pack "$P3DS_FAN_PACK" --out "$STAGED" || {
+      die "the follower sprite pack could not be used (the message above says why)"
+      hint "The follower sprite pack could not be converted. Check the message above it; clear the pack field in Advanced to build without the fan-tier sprites."
+      return 1
+    }
+    ok "fan-tier follower sprites staged (full credits in FOLLOWER_CREDITS.txt)"
+  else
+    rm -f "$bin" "$credits"
+  fi
+}
+
 # ------------------------------------------------------------------------------------------------ build / cia
 step_build() {
   [ -f "$ROM" ] || { die "$TITLE ROM not selected"; return 1; }
@@ -253,6 +283,7 @@ step_build() {
   fix_line_endings
   g=$(free_gb "$ROOT"); [ -n "$g" ] && [ "$g" -lt 4 ] && { die "only ${g} GB free"; hint "The disk is almost full (${g} GB free). Free up about 8 GB and press the button again."; return 1; }
   extract_and_stage || return 1
+  fansprites_convert || return 1
   build_env
   say "Compiling the $TITLE New 3DS port (LINK_GAME). The first time this can take a while; later builds are quicker."
   say "Project version: $(git -C "$ROOT" log -1 --format='commit %h (%cs): %s' 2>/dev/null)"
@@ -322,6 +353,8 @@ step_export() {
     cp -a "$STAGED/nitrofs"/. "$o/nitrofs/" || { die "could not save staged nitrofs"; return 1; }
     cp -a "$STAGED/overlays"/. "$o/overlays/" || { die "could not save staged overlays"; return 1; }
     [ -f "$STAGED/rom_header.bin" ] && cp -f "$STAGED/rom_header.bin" "$o/rom_header.bin"
+    [ -f "$STAGED/followers_fan.bin" ] && cp -f "$STAGED/followers_fan.bin" "$o/followers_fan.bin"
+    [ -f "$STAGED/FOLLOWER_CREDITS.txt" ] && cp -f "$STAGED/FOLLOWER_CREDITS.txt" "$o/FOLLOWER_CREDITS.txt"
   fi
   cat > "$o/How to put this on your 3DS.txt" <<TXT
 How to put this on your 3DS
@@ -344,6 +377,9 @@ and 3D Kyurem are still unfinished. It will not run on an original 3DS.
    nitrofs and overlays in SD:\\3ds\\${FOLDER}\\.
 TXT
   printf '\nBuilt version: %s\n' "$(git -C "$ROOT" log -1 --format='commit %h (%cs): %s' 2>/dev/null)" >> "$o/How to put this on your 3DS.txt"
+  if [ -f "$o/followers_fan.bin" ]; then
+    printf 'This build also has followers_fan.bin: copy it into the same SD:\\3ds\\%s\\ folder.\nIt holds the credited fan-made follower sprites; FOLLOWER_CREDITS.txt lists their artists.\n' "$FOLDER" >> "$o/How to put this on your 3DS.txt"
+  fi
   sed -i 's/$/\r/' "$o/How to put this on your 3DS.txt" 2>/dev/null
   ok "saved to your output folder ($OUT_NAME)"
   echo "##OUTPUT:$OUT_NAME"
@@ -382,6 +418,8 @@ step_deploy() {
   cp -a "$STAGED/nitrofs"/. "$d/nitrofs/" || { die "could not copy nitrofs to the SD card"; return 1; }
   cp -a "$STAGED/overlays"/. "$d/overlays/" || { die "could not copy overlays to the SD card"; return 1; }
   [ -f "$STAGED/rom_header.bin" ] && cp -f "$STAGED/rom_header.bin" "$d/rom_header.bin"
+  [ -f "$STAGED/followers_fan.bin" ] && cp -f "$STAGED/followers_fan.bin" "$d/followers_fan.bin"
+  [ -f "$STAGED/FOLLOWER_CREDITS.txt" ] && cp -f "$STAGED/FOLLOWER_CREDITS.txt" "$d/FOLLOWER_CREDITS.txt"
   if [ "$CIA_BUILT" = 1 ] && [ -f "$OUTCIA" ]; then
     mkdir -p "$sd/cias" && cp -f "$OUTCIA" "$sd/cias/${TARGET}.cia" && ok "HOME Menu installer copied to $sd/cias/${TARGET}.cia (install it with FBI)"
   fi
