@@ -406,17 +406,15 @@ def convert_sheet(path):
 # the available tool allows it.
 # --------------------------------------------------------------------------
 def find_sheet_root(base):
-    """The folder directly holding the sheets, at base or one level down."""
-    if os.path.isfile(os.path.join(base, ALLOWLIST_FILES[0])):
-        return base
-    try:
-        children = sorted(os.listdir(base))
-    except OSError:
-        return None
-    for child in children:
-        sub = os.path.join(base, child)
-        if os.path.isdir(sub) and os.path.isfile(os.path.join(sub, ALLOWLIST_FILES[0])):
-            return sub
+    """The folder directly holding the sheets, wherever it sits under base.
+
+    Extractors and hand-made re-zips wrap the sheet folder in extra levels
+    (an archive-named folder around the pack's own folder), so search the
+    whole extracted tree instead of only the base and one level down."""
+    for root, dirs, _files in os.walk(base):
+        dirs.sort()
+        if os.path.isfile(os.path.join(root, ALLOWLIST_FILES[0])):
+            return root
     return None
 
 

@@ -215,6 +215,8 @@ step_needs() {
   local tools=ok
   for c in git make python3 sha1sum ninja clang llvm-objcopy; do command -v $c >/dev/null || tools=missing; done
   devkitpro_ready "$DKP" || tools=missing
+  # A RAR reader reads the optional follower sprite pack (.rar); setup installs unar.
+  command -v unar >/dev/null || command -v unrar >/dev/null || command -v 7z >/dev/null || tools=missing
   [ $tools = ok ] || echo "##NEED:setup"
   return 0
 }
@@ -232,12 +234,6 @@ step_setup() {
     }
   fi
   have_ninja && ok "ninja" || { die "ninja is still missing after setup"; return 1; }
-  # A RAR reader is only needed for the optional follower sprite pack; best effort.
-  if ! command -v unar >/dev/null && ! command -v unrar >/dev/null && ! command -v 7z >/dev/null; then
-    say "Installing unar (only needed if you use the follower sprite pack)..."
-    as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq unar >/dev/null 2>&1 \
-      && ok "unar" || say "  [--]      unar not installed; the follower sprite pack can still be supplied as a .zip or a folder"
-  fi
   say "Setup done."
 }
 
